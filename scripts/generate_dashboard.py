@@ -38,6 +38,26 @@ PER_BENEF_COLORS = {
     "Resto (Contributivo)": "#ff7f0e",
 }
 
+ENTITY_DISPLAY = {
+    ENTITY_SENASA: "Sector público (ARS Senasa)",
+    ENTITY_REST: "Sector privado",
+}
+
+SECTOR_COMPONENTS = [
+    ("net_income_contrib_monthly_mm", "Contributivo"),
+    ("net_income_subsid_monthly_mm", "Subsidiado"),
+    ("net_income_plan_monthly_mm", "Planes especiales"),
+]
+
+SECTOR_COMPONENT_COLORS = {
+    (ENTITY_SENASA, "Contributivo"): "#1f77b4",
+    (ENTITY_SENASA, "Subsidiado"): "#6baed6",
+    (ENTITY_SENASA, "Planes especiales"): "#9ecae1",
+    (ENTITY_REST, "Contributivo"): "#ff7f0e",
+    (ENTITY_REST, "Subsidiado"): "#ffb366",
+    (ENTITY_REST, "Planes especiales"): "#ffa64d",
+}
+
 SUMMARY_METRICS = [
     ("monthly_income_mm", "Ingresos mensuales (Millones DOP)", "mm"),
     ("monthly_margin_mm", "Margen mensual (Millones DOP)", "mm"),
@@ -89,10 +109,6 @@ def _format_value(value: float | None, fmt: str) -> str:
     if fmt == "ratio":
         return f"{_format_number(value, 2)}x"
     return _format_number(value, 2)
-
-
-def _format_table_cell(value: float | None) -> str:
-    return "—" if value is None else _format_number(value, 2)
 
 
 def _format_date(date: str | None) -> str:
@@ -163,51 +179,6 @@ def build_summary_html(metrics: pl.DataFrame) -> str:
             )
         parts.append("</tbody></table>")
 
-    parts.append("</section>")
-    return "".join(parts)
-
-
-def build_sector_net_income_html(metrics: pl.DataFrame) -> str:
-    subset = (
-        metrics.select("date", "entity", "net_income_monthly_mm")
-        .filter(pl.col("net_income_monthly_mm").is_not_null())
-        .pivot(index="date", columns="entity", values="net_income_monthly_mm")
-        .sort("date", descending=True)
-        .with_columns(pl.col("date").dt.strftime("%Y-%m").alias("period"))
-    )
-
-    if subset.height == 0:
-        return ""
-
-    rename_map = {
-        ENTITY_SENASA: "Pública (ARS Senasa)",
-        ENTITY_REST: "Privada (resto del sistema)",
-    }
-
-    subset = subset.rename(rename_map)
-
-    public_col = rename_map[ENTITY_SENASA]
-    private_col = rename_map[ENTITY_REST]
-
-    parts: list[str] = [
-        "<section>",
-        "<h2>Resultado neto mensual por sector</h2>",
-        "<p class=\"caption\">Montos en millones de pesos dominicanos (RD$ MM). Sector público corresponde a ARS Senasa; sector privado agrupa el resto del sistema.</p>",
-        "<table class=\"timeseries\"><thead><tr><th>Periodo</th><th>Sector público</th><th>Sector privado</th></tr></thead><tbody>",
-    ]
-
-    for row in subset.select("period", public_col, private_col).iter_rows(named=True):
-        parts.append(
-            "<tr><td>"
-            + row["period"]
-            + "</td><td>"
-            + _format_table_cell(row[public_col])
-            + "</td><td>"
-            + _format_table_cell(row[private_col])
-            + "</td></tr>"
-        )
-
-    parts.append("</tbody></table>")
     parts.append("</section>")
     return "".join(parts)
 
@@ -315,6 +286,51 @@ def _make_grouped_bar(df: pl.DataFrame, value_col: str, *, title: str, y_label: 
     )
     fig.update_layout(barmode="group", title=title)
     return _format_figure(fig, y_title=y_label)
+
+
+def _make_sector_net_income_chart(df: pl.DataFrame) -> go.Figure:
+    filtered = (
+        df.filter(pl.col("entity").is_in([ENTITY_SENASA, ENTITY_REST]))
+        .select(["entity", "date"] + [col for col, _ in SECTOR_COMPONENTS])
+        .sort("date")
+    )
+
+    fig = go.Figure()
+
+    for entity in (ENTITY_SENASA, ENTITY_REST):
+        entity_df = filtered.filter(pl.col("entity") == entity)
+        if entity_df.height == 0:
+            continue
+        display_name = ENTITY_DISPLAY.get(entity, entity)
+        offsetgroup = "public" if entity == ENTITY_SENASA else "private"
+
+        for column, label in SECTOR_COMPONENTS:
+            if column not in entity_df.columns:
+                continue
+            series = entity_df.get_column(column)
+            if series.null_count() == series.len():
+                continue
+            color = SECTOR_COMPONENT_COLORS.get((entity, label), ENTITY_COLORS.get(entity, "#888888"))
+            fig.add_trace(
+                go.Bar(
+                    x=entity_df.get_column("date").to_list(),
+                    y=series.fill_null(0).to_list(),
+                    name=f"{display_name} · {label}",
+                    legendgroup=display_name,
+                    offsetgroup=offsetgroup,
+                    marker_color=color,
+                    hovertemplate=(
+                        f"{display_name}<br>%{{x|%Y-%m}}<br>{label}: %{{y:,.2f}} RD$ MM<extra></extra>"
+                    ),
+                )
+            )
+
+    fig.update_layout(
+        barmode="relative",
+        title="Resultado neto mensual por sector",
+        bargap=0.25,
+    )
+    return _format_figure(fig, y_title="RD$ MM")
 
 
 def _make_net_income_chart(df: pl.DataFrame) -> go.Figure:
@@ -574,10 +590,6 @@ def _render_html(
         "table.summary th, table.summary td { border: 1px solid #e0e0e0; padding: 6px 10px; text-align: left; font-size: 0.95rem; }",
         "table.summary th { background: #f5f7fa; font-weight: 600; }",
         "table.summary td.metric { width: 40%; }",
-        "table.timeseries { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; font-size: 0.92rem; }",
-        "table.timeseries th, table.timeseries td { border: 1px solid #e4e6eb; padding: 6px 10px; text-align: right; }",
-        "table.timeseries th:first-child, table.timeseries td:first-child { text-align: left; }",
-        "table.timeseries tbody tr:nth-child(even) { background: #f8f9fb; }",
         "</style>",
         "<title>ARS Senasa vs resto del sistema</title>",
         "</head>",
@@ -608,8 +620,6 @@ def main() -> None:
     affiliations = load_affiliations(DATA_ROOT)
     per_beneficiary = build_net_income_per_beneficiary(metrics, affiliations)
     summary_html = build_summary_html(metrics)
-    sector_html = build_sector_net_income_html(metrics)
-    summary_block = "".join(part for part in (summary_html, sector_html) if part)
 
     sections = [
         (
@@ -621,6 +631,11 @@ def main() -> None:
             "Siniestros mensuales (Bn DOP)",
             "Corrección de signos para el resto de la industria asegura valores positivos.",
             _make_grouped_bar(metrics, "monthly_claims_mm", title="Siniestros mensuales (Bn DOP)", y_label="Bn DOP"),
+        ),
+        (
+            "Resultado neto mensual por sector",
+            "Fuentes: REPÚBLICA DOMINICANA: INDICADORES FINANCIEROS DE LAS ARS PÚBLICAS/1; República Dominicana: Régimen Contributivo. Estado de Resultado Mensual por Categoría de ARS. Barras apiladas muestran cómo los regímenes contribuyen al resultado neto mensual de Senasa y del resto del sistema.",
+            _make_sector_net_income_chart(metrics),
         ),
         (
             "Afiliados al SFS",
@@ -669,7 +684,7 @@ def main() -> None:
         ),
     ]
 
-    html = _render_html(sections, summary_block)
+    html = _render_html(sections, summary_html)
     REPORT_PATH.write_text(html, encoding="utf-8")
 
 
