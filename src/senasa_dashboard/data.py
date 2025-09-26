@@ -1,0 +1,400 @@
+"""Data preparation helpers for Senasa dashboards."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Literal
+
+import polars as pl
+
+ENTITY_SENASA: Literal["ARS SENASA"] = "ARS SENASA"
+ENTITY_TOTAL: Literal["TOTAL GENERAL"] = "TOTAL GENERAL"
+ENTITY_REST: Literal["RESTO INDUSTRIA"] = "RESTO INDUSTRIA"
+
+
+def _read_grouped_dataset(data_root: Path | str) -> pl.DataFrame:
+    """Load the EF2 grouped metrics parquet file with consistency checks."""
+
+    data_root = Path(data_root)
+    path = data_root / "ef2_metrics_grouped.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"Expected dataset not found: {path}")
+    df = pl.read_parquet(path)
+    required = {
+        "entity",
+        "date",
+        "total_income",
+        "net_income_total",
+        "technical_reserves",
+        "invested_reserves",
+        "reserve_gap",
+        "retained_earnings",
+        "accounts_payable_pss",
+        "siniestrality_total",
+        "siniestrality_contributivo",
+        "siniestrality_subsidiado",
+    }
+    missing = required.difference(df.columns)
+    if missing:
+        missing_cols = ", ".join(sorted(missing))
+        raise ValueError(f"Dataset {path} is missing required columns: {missing_cols}")
+    return df
+
+
+def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
+    """Compute monthly flows for a given entity and normalise to millions of DOP."""
+
+    subset = df.filter(pl.col("entity") == entity).sort("date")
+    subset = subset.with_columns(
+        pl.col("date").dt.year().alias("year"),
+        pl.when(pl.col("total_income") <= 0)
+        .then(None)
+        .otherwise(pl.col("total_income"))
+        .alias("_total_income_clean"),
+    )
+
+    subset = subset.with_columns(
+        pl.col("_total_income_clean").cum_max().over("year").alias("_total_income_adj")
+    )
+
+    subset = subset.with_columns(
+        (pl.col("_total_income_adj") - pl.col("_total_income_adj").shift(1).over("year"))
+        .fill_null(pl.col("_total_income_adj"))
+        .alias("_monthly_income_raw")
+    )
+
+    subset = subset.with_columns(
+        pl.when((pl.col("_monthly_income_raw") <= 0) | pl.col("_monthly_income_raw").is_null())
+        .then(None)
+        .otherwise(pl.col("_monthly_income_raw"))
+        .alias("monthly_income"),
+    )
+
+    subset = subset.with_columns(
+        (pl.col("net_income_total") - pl.col("net_income_total").shift(1).over("year"))
+        .fill_null(pl.col("net_income_total"))
+        .alias("_net_income_monthly_raw"),
+        (pl.col("net_income_contributivo") - pl.col("net_income_contributivo").shift(1).over("year"))
+        .fill_null(pl.col("net_income_contributivo"))
+        .alias("_net_income_contrib_monthly_raw"),
+        (pl.col("net_income_subsidiado") - pl.col("net_income_subsidiado").shift(1).over("year"))
+        .fill_null(pl.col("net_income_subsidiado"))
+        .alias("_net_income_subsid_monthly_raw"),
+        (pl.col("net_income_plan") - pl.col("net_income_plan").shift(1).over("year"))
+        .fill_null(pl.col("net_income_plan"))
+        .alias("_net_income_plan_monthly_raw"),
+    )
+
+    subset = subset.with_columns(
+        pl.when(pl.col("monthly_income").is_null())
+        .then(None)
+        .otherwise(pl.col("_net_income_monthly_raw"))
+        .alias("net_income_monthly"),
+        pl.when(pl.col("monthly_income").is_null())
+        .then(None)
+        .otherwise(pl.col("_net_income_contrib_monthly_raw"))
+        .alias("net_income_contrib_monthly"),
+        pl.when(pl.col("monthly_income").is_null())
+        .then(None)
+        .otherwise(pl.col("_net_income_subsid_monthly_raw"))
+        .alias("net_income_subsid_monthly"),
+        pl.when(pl.col("monthly_income").is_null())
+        .then(None)
+        .otherwise(pl.col("_net_income_plan_monthly_raw"))
+        .alias("net_income_plan_monthly"),
+    )
+
+    subset = subset.with_columns(
+        (pl.col("monthly_income") * pl.col("siniestrality_total") / 100).alias("monthly_claims"),
+        (pl.col("monthly_income") - pl.col("monthly_income") * pl.col("siniestrality_total") / 100).alias(
+            "monthly_margin"
+        ),
+    )
+
+    subset = subset.with_columns(
+        pl.when(pl.col("monthly_income").is_null() | (pl.col("monthly_income") == 0))
+        .then(None)
+        .otherwise(pl.col("monthly_claims") / pl.col("monthly_income") * 100)
+        .alias("monthly_claims_pct"),
+        pl.when(pl.col("technical_reserves").is_null() | (pl.col("technical_reserves") == 0))
+        .then(None)
+        .otherwise(pl.col("reserve_gap") / pl.col("technical_reserves") * 100)
+        .alias("reserve_gap_pct"),
+        pl.when(pl.col("accounts_payable_pss").is_null() | (pl.col("accounts_payable_pss") == 0))
+        .then(None)
+        .otherwise(pl.col("technical_reserves") / pl.col("accounts_payable_pss"))
+        .alias("reserves_to_payables"),
+    )
+
+    subset = subset.with_columns(
+        (pl.col("monthly_income") / 1e6).alias("monthly_income_mm"),
+        (pl.col("monthly_claims") / 1e6).alias("monthly_claims_mm"),
+        (pl.col("monthly_margin") / 1e6).alias("monthly_margin_mm"),
+        (pl.col("net_income_total") / 1e6).alias("net_income_total_mm"),
+        (pl.col("net_income_monthly") / 1e6).alias("net_income_monthly_mm"),
+        (pl.col("net_income_contributivo") / 1e6).alias("net_income_contributivo_mm"),
+        (pl.col("net_income_subsidiado") / 1e6).alias("net_income_subsidiado_mm"),
+        (pl.col("net_income_plan") / 1e6).alias("net_income_plan_mm"),
+        (pl.col("net_income_contrib_monthly") / 1e6).alias("net_income_contrib_monthly_mm"),
+        (pl.col("net_income_subsid_monthly") / 1e6).alias("net_income_subsid_monthly_mm"),
+        (pl.col("net_income_plan_monthly") / 1e6).alias("net_income_plan_monthly_mm"),
+        (pl.col("technical_reserves") / 1e6).alias("technical_reserves_mm"),
+        (pl.col("invested_reserves") / 1e6).alias("invested_mm"),
+        (pl.col("reserve_gap") / 1e6).alias("reserve_gap_mm"),
+        (pl.col("retained_earnings") / 1e6).alias("retained_mm"),
+        (pl.col("accounts_payable_pss") / 1e6).alias("accounts_payable_mm"),
+    )
+
+    subset = subset.drop([
+        "year",
+        "_total_income_clean",
+        "_total_income_adj",
+        "_monthly_income_raw",
+        "_net_income_monthly_raw",
+        "_net_income_contrib_monthly_raw",
+        "_net_income_subsid_monthly_raw",
+        "_net_income_plan_monthly_raw",
+    ])
+
+    return subset
+
+
+def _rename_with_prefix(df: pl.DataFrame, prefix: str) -> pl.DataFrame:
+    mapping = {col: f"{prefix}{col}" for col in df.columns if col != "date"}
+    return df.rename(mapping)
+
+
+def build_monthly_metrics(data_root: Path | str = Path("data/processed")) -> pl.DataFrame:
+    """Return monthly Senasa vs rest-of-industry metrics for dashboard consumption."""
+
+    df = _read_grouped_dataset(data_root)
+
+    senasa = _prepare_entity_panel(df, ENTITY_SENASA)
+    total = _prepare_entity_panel(df, ENTITY_TOTAL)
+
+    total_prefixed = _rename_with_prefix(total, "total_")
+    senasa_prefixed = _rename_with_prefix(senasa, "senasa_")
+
+    joined = total_prefixed.join(senasa_prefixed, on="date", how="inner", validate="1:1")
+
+    rest = joined.with_columns(
+        pl.lit(ENTITY_REST).alias("entity"),
+        (pl.col("total_monthly_income") - pl.col("senasa_monthly_income")).alias("monthly_income"),
+        (pl.col("total_monthly_claims") - pl.col("senasa_monthly_claims")).alias("monthly_claims"),
+        (pl.col("total_monthly_margin") - pl.col("senasa_monthly_margin")).alias("monthly_margin"),
+        (pl.col("total_net_income_monthly") - pl.col("senasa_net_income_monthly")).alias("net_income_monthly"),
+        (pl.col("total_net_income_total") - pl.col("senasa_net_income_total")).alias("net_income_total"),
+        (pl.col("total_net_income_contrib_monthly") - pl.col("senasa_net_income_contrib_monthly")).alias(
+            "net_income_contrib_monthly"
+        ),
+        (pl.col("total_net_income_subsid_monthly") - pl.col("senasa_net_income_subsid_monthly")).alias(
+            "net_income_subsid_monthly"
+        ),
+        (pl.col("total_net_income_plan_monthly") - pl.col("senasa_net_income_plan_monthly")).alias(
+            "net_income_plan_monthly"
+        ),
+        (pl.col("total_technical_reserves") - pl.col("senasa_technical_reserves")).alias(
+            "technical_reserves"
+        ),
+        (pl.col("total_invested_reserves") - pl.col("senasa_invested_reserves")).alias("invested_reserves"),
+        (pl.col("total_reserve_gap") - pl.col("senasa_reserve_gap")).alias("reserve_gap"),
+        (pl.col("total_accounts_payable_pss") - pl.col("senasa_accounts_payable_pss")).alias(
+            "accounts_payable_pss"
+        ),
+        (pl.col("total_retained_earnings") - pl.col("senasa_retained_earnings")).alias("retained_earnings"),
+    )
+
+    rest = rest.with_columns(
+        pl.when(pl.col("monthly_income") <= 0)
+        .then(None)
+        .otherwise(pl.col("monthly_income"))
+        .alias("monthly_income"),
+        pl.when(pl.col("monthly_income").is_null())
+        .then(None)
+        .otherwise(pl.col("net_income_monthly"))
+        .alias("net_income_monthly"),
+        pl.when(pl.col("monthly_income").is_null())
+        .then(None)
+        .otherwise(pl.col("net_income_total"))
+        .alias("net_income_total"),
+        pl.when(pl.col("monthly_income").is_null())
+        .then(None)
+        .otherwise(pl.col("net_income_contrib_monthly"))
+        .alias("net_income_contrib_monthly"),
+        pl.when(pl.col("monthly_income").is_null())
+        .then(None)
+        .otherwise(pl.col("net_income_subsid_monthly"))
+        .alias("net_income_subsid_monthly"),
+        pl.when(pl.col("monthly_income").is_null())
+        .then(None)
+        .otherwise(pl.col("net_income_plan_monthly"))
+        .alias("net_income_plan_monthly"),
+    )
+
+    rest = rest.with_columns(
+        pl.when(pl.col("monthly_income").is_null() | (pl.col("monthly_income") == 0))
+        .then(None)
+        .otherwise(pl.col("monthly_claims") / pl.col("monthly_income") * 100)
+        .alias("siniestrality_total"),
+        pl.when(pl.col("monthly_income").is_null() | (pl.col("monthly_income") == 0))
+        .then(None)
+        .otherwise(pl.col("monthly_claims") / pl.col("monthly_income") * 100)
+        .alias("monthly_claims_pct"),
+        pl.when(pl.col("technical_reserves").is_null() | (pl.col("technical_reserves") == 0))
+        .then(None)
+        .otherwise(pl.col("reserve_gap") / pl.col("technical_reserves") * 100)
+        .alias("reserve_gap_pct"),
+        pl.when(pl.col("accounts_payable_pss").is_null() | (pl.col("accounts_payable_pss") == 0))
+        .then(None)
+        .otherwise(pl.col("technical_reserves") / pl.col("accounts_payable_pss"))
+        .alias("reserves_to_payables"),
+        _weighted_siniestrality(
+            total_income_key="total_monthly_income",
+            senasa_income_key="senasa_monthly_income",
+            total_ratio_key="total_siniestrality_contributivo",
+            senasa_ratio_key="senasa_siniestrality_contributivo",
+        ).alias("siniestrality_contributivo"),
+        _weighted_siniestrality(
+            total_income_key="total_monthly_income",
+            senasa_income_key="senasa_monthly_income",
+            total_ratio_key="total_siniestrality_subsidiado",
+            senasa_ratio_key="senasa_siniestrality_subsidiado",
+        ).alias("siniestrality_subsidiado"),
+        (pl.col("monthly_income") / 1e6).alias("monthly_income_mm"),
+        (pl.col("monthly_claims") / 1e6).alias("monthly_claims_mm"),
+        (pl.col("monthly_margin") / 1e6).alias("monthly_margin_mm"),
+        (pl.col("net_income_total") / 1e6).alias("net_income_total_mm"),
+        (pl.col("net_income_monthly") / 1e6).alias("net_income_monthly_mm"),
+        (pl.col("net_income_contrib_monthly") / 1e6).alias("net_income_contrib_monthly_mm"),
+        (pl.col("net_income_subsid_monthly") / 1e6).alias("net_income_subsid_monthly_mm"),
+        (pl.col("net_income_plan_monthly") / 1e6).alias("net_income_plan_monthly_mm"),
+        (pl.col("technical_reserves") / 1e6).alias("technical_reserves_mm"),
+        (pl.col("invested_reserves") / 1e6).alias("invested_mm"),
+        (pl.col("reserve_gap") / 1e6).alias("reserve_gap_mm"),
+        (pl.col("retained_earnings") / 1e6).alias("retained_mm"),
+        (pl.col("accounts_payable_pss") / 1e6).alias("accounts_payable_mm"),
+    )
+
+    rest = rest.drop([
+        "total_monthly_income",
+        "total_monthly_claims",
+        "total_monthly_margin",
+        "total_net_income_monthly",
+        "total_net_income_total",
+        "total_net_income_contrib_monthly",
+        "total_net_income_subsid_monthly",
+        "total_net_income_plan_monthly",
+        "total_technical_reserves",
+        "total_invested_reserves",
+        "total_reserve_gap",
+        "total_accounts_payable_pss",
+        "total_retained_earnings",
+        "senasa_monthly_income",
+        "senasa_monthly_claims",
+        "senasa_monthly_margin",
+        "senasa_net_income_monthly",
+        "senasa_net_income_total",
+        "senasa_net_income_contrib_monthly",
+        "senasa_net_income_subsid_monthly",
+        "senasa_net_income_plan_monthly",
+        "senasa_technical_reserves",
+        "senasa_invested_reserves",
+        "senasa_reserve_gap",
+        "senasa_accounts_payable_pss",
+        "senasa_retained_earnings",
+    ])
+    rest = rest.select(
+        "entity",
+        "date",
+        "monthly_income",
+        "monthly_income_mm",
+        "monthly_claims",
+        "monthly_claims_mm",
+        "monthly_margin",
+        "monthly_margin_mm",
+        "monthly_claims_pct",
+        "net_income_monthly",
+        "net_income_monthly_mm",
+        "net_income_total",
+        "net_income_total_mm",
+        "siniestrality_total",
+        "siniestrality_contributivo",
+        "siniestrality_subsidiado",
+        "net_income_contrib_monthly",
+        "net_income_contrib_monthly_mm",
+        "net_income_subsid_monthly",
+        "net_income_subsid_monthly_mm",
+        "net_income_plan_monthly",
+        "net_income_plan_monthly_mm",
+        "technical_reserves",
+        "technical_reserves_mm",
+        "invested_reserves",
+        "invested_mm",
+        "reserve_gap",
+        "reserve_gap_mm",
+        "reserve_gap_pct",
+        "accounts_payable_pss",
+        "accounts_payable_mm",
+        "reserves_to_payables",
+        "retained_earnings",
+        "retained_mm",
+    )
+    senasa_final = senasa.select(
+        pl.lit(ENTITY_SENASA).alias("entity"),
+        "date",
+        "monthly_income",
+        "monthly_income_mm",
+        "monthly_claims",
+        "monthly_claims_mm",
+        "monthly_margin",
+        "monthly_margin_mm",
+        "monthly_claims_pct",
+        "net_income_monthly",
+        "net_income_monthly_mm",
+        "net_income_total",
+        "net_income_total_mm",
+        "siniestrality_total",
+        "siniestrality_contributivo",
+        "siniestrality_subsidiado",
+        "net_income_contrib_monthly",
+        "net_income_contrib_monthly_mm",
+        "net_income_subsid_monthly",
+        "net_income_subsid_monthly_mm",
+        "net_income_plan_monthly",
+        "net_income_plan_monthly_mm",
+        "technical_reserves",
+        "technical_reserves_mm",
+        "invested_reserves",
+        "invested_mm",
+        "reserve_gap",
+        "reserve_gap_mm",
+        "reserve_gap_pct",
+        "accounts_payable_pss",
+        "accounts_payable_mm",
+        "reserves_to_payables",
+        "retained_earnings",
+        "retained_mm",
+    )
+
+    combined = pl.concat([senasa_final, rest]).sort(["entity", "date"])
+    return combined
+
+
+def _weighted_siniestrality(
+    *,
+    total_income_key: str,
+    senasa_income_key: str,
+    total_ratio_key: str,
+    senasa_ratio_key: str,
+) -> pl.Expr:
+    """Compute weighted siniestrality for the rest-of-industry segment."""
+
+    total_income = pl.col(total_income_key)
+    senasa_income = pl.col(senasa_income_key)
+    rest_income = total_income - senasa_income
+    return (
+        (
+            pl.col(total_ratio_key) * total_income - pl.col(senasa_ratio_key) * senasa_income
+        )
+        / pl.when(rest_income == 0).then(None).otherwise(rest_income)
+    )
