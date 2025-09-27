@@ -41,11 +41,11 @@ def _read_grouped_dataset(data_root: Path | str) -> pl.DataFrame:
     return df
 
 
-def _read_clean_dataset(data_root: Path | str) -> pl.DataFrame:
-    """Load EF2 entity-level metrics used to rebuild rest-of-industry aggregates."""
+def _read_derived_dataset(data_root: Path | str) -> pl.DataFrame:
+    """Load pre-aggregated Senasa vs resto metrics derived from EF2 workbooks."""
 
     data_root = Path(data_root)
-    path = data_root / "ef2_metrics_clean.parquet"
+    path = data_root / "senasa_market_metrics_derived.parquet"
     if not path.exists():
         raise FileNotFoundError(f"Expected dataset not found: {path}")
     return pl.read_parquet(path)
@@ -210,88 +210,14 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
     return subset
 
 
-def _prepare_rest_panel(df: pl.DataFrame) -> pl.DataFrame:
-    """Aggregate private ARS cumulative metrics and derive monthly flows."""
-
-    private = df.filter((pl.col("entity") != ENTITY_SENASA) & (pl.col("entity") != ENTITY_TOTAL))
-
-    aggregated = (
-        private.group_by("date")
-        .agg(
-            pl.col("total_income").sum().alias("total_income"),
-            (pl.col("total_income") * pl.col("siniestrality_total") / 100)
-            .sum()
-            .alias("_claims_cum"),
-            pl.col("net_income_total").sum().alias("net_income_total"),
-            pl.col("net_income_contributivo").sum().alias("net_income_contributivo"),
-            pl.col("net_income_subsidiado").sum().alias("net_income_subsidiado"),
-            pl.col("net_income_plan").sum().alias("net_income_plan"),
-            pl.col("technical_reserves").sum().alias("technical_reserves"),
-            pl.col("invested_reserves").sum().alias("invested_reserves"),
-            pl.col("reserve_gap").sum().alias("reserve_gap"),
-            pl.col("retained_earnings").sum().alias("retained_earnings"),
-            pl.col("accounts_payable_pss").sum().alias("accounts_payable_pss"),
-        )
-        .sort("date")
-        .with_columns(
-            pl.lit(ENTITY_REST).alias("entity"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("_claims_cum") / pl.col("total_income") * 100)
-            .alias("siniestrality_total"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("net_income_total"))
-            .alias("net_income_total"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("net_income_contributivo"))
-            .alias("net_income_contributivo"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("net_income_subsidiado"))
-            .alias("net_income_subsidiado"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("net_income_plan"))
-            .alias("net_income_plan"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("technical_reserves"))
-            .alias("technical_reserves"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("invested_reserves"))
-            .alias("invested_reserves"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("reserve_gap"))
-            .alias("reserve_gap"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("retained_earnings"))
-            .alias("retained_earnings"),
-            pl.when(pl.col("total_income") <= 0)
-            .then(None)
-            .otherwise(pl.col("accounts_payable_pss"))
-            .alias("accounts_payable_pss"),
-            pl.lit(None).cast(pl.Float64).alias("siniestrality_contributivo"),
-            pl.lit(None).cast(pl.Float64).alias("siniestrality_subsidiado"),
-        )
-        .drop("_claims_cum")
-    )
-
-    return _prepare_entity_panel(aggregated, ENTITY_REST)
-
-
 def build_monthly_metrics(data_root: Path | str = Path("data/processed")) -> pl.DataFrame:
     """Return monthly Senasa vs rest-of-industry metrics for dashboard consumption."""
 
     grouped = _read_grouped_dataset(data_root)
-    clean = _read_clean_dataset(data_root)
+    derived = _read_derived_dataset(data_root)
 
     senasa = _prepare_entity_panel(grouped, ENTITY_SENASA)
-    rest = _prepare_rest_panel(clean)
+    rest = _prepare_entity_panel(derived, ENTITY_REST)
 
     senasa_final = senasa.select(
         pl.lit(ENTITY_SENASA).alias("entity"),
