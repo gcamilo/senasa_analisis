@@ -595,7 +595,7 @@ def _render_html(
         "</head>",
         "<body>",
         "<h1>ARS Senasa vs resto del sistema</h1>",
-        "<p class=\"caption\">Series mensuales derivadas de EF2 (Situación Financiera). Las cuentas de resultado se presentan en flujo mensual; las de balance permanecen como stocks.</p>",
+        "<p class=\"caption\">Series mensuales reconstruidas a partir de los EF2 (Situación Financiera) publicados por SISALRIL. Senasa se toma de su propio estado y el resto de la industria agrupa todas las ARS privadas. Las cuentas de resultado se expresan como flujo mensual, mientras que las partidas patrimoniales permanecen como stocks. Meses en cero indican periodos aún no auditados.</p>",
     ]
 
     if summary_html:
@@ -624,62 +624,62 @@ def main() -> None:
     sections = [
         (
             "Ingresos mensuales (Bn DOP)",
-            "Ingresos convertidos a flujo mensual en miles de millones de pesos.",
+            "Flujo mensual de ingresos por capitación tomado de los EF2. El agregado privado suma todas las ARS y corrige el rezago que mezclaba enero y febrero de 2024.",
             _make_grouped_bar(metrics, "monthly_income_mm", title="Ingresos mensuales (Bn DOP)", y_label="Bn DOP"),
         ),
         (
             "Siniestros mensuales (Bn DOP)",
-            "Corrección de signos para el resto de la industria asegura valores positivos.",
+            "Costo mensual estimado como ingresos × siniestralidad declarada. Permite contrastar la presión asistencial frente al flujo de primas en cada bloque.",
             _make_grouped_bar(metrics, "monthly_claims_mm", title="Siniestros mensuales (Bn DOP)", y_label="Bn DOP"),
         ),
         (
             "Resultado neto mensual por sector",
-            "Fuentes: REPÚBLICA DOMINICANA: INDICADORES FINANCIEROS DE LAS ARS PÚBLICAS/1; República Dominicana: Régimen Contributivo. Estado de Resultado Mensual por Categoría de ARS. Barras apiladas muestran cómo los regímenes contribuyen al resultado neto mensual de Senasa y del resto del sistema.",
+            "Fuentes: REPÚBLICA DOMINICANA: INDICADORES FINANCIEROS DE LAS ARS PÚBLICAS/1 y Régimen Contributivo. El apilado muestra cómo cada régimen (contributivo, subsidiado y planes especiales) explica las ganancias o pérdidas de Senasa y del agregado privado en cada mes.",
             _make_sector_net_income_chart(metrics),
         ),
         (
             "Afiliados al SFS",
-            "Serie oficial SISALRIL: millones de beneficiarios en los regímenes subsidiado y contributivo.",
+            "Padrones oficiales del Seguro Familiar de Salud; se presentan los millones de beneficiarios en los regímenes subsidiado y contributivo.",
             _make_enrollment_chart(affiliations),
         ),
         (
             "Resultado neto mensual (Millones DOP)",
-            "Resultado neto expresado como flujo del mes. El gráfico siguiente conserva la trayectoria acumulada para referencia.",
+            "Resultado del mes según EF2. Útil para reconocer episodios con pérdidas o ganancias extraordinarias antes de acumulaciones.",
             _make_net_income_chart(metrics),
         ),
         (
             "Resultado neto acumulado (Millones DOP)",
-            "Serie acumulada directamente del EF2 para seguir la trayectoria histórica.",
+            "Saldo acumulado de utilidades a la fecha reportado en EF2; ilustra la trayectoria anual al sumar cada mes transcurrido.",
             _make_net_income_cumulative(metrics),
         ),
         (
             "Resultado neto por afiliado",
-            "Senasa se compara contra el resto del sistema usando la base de afiliados de cada régimen.",
+            "Resultado mensual dividido entre la base de afiliados del régimen correspondiente (SISALRIL). Permite medir rentabilidad relativa por beneficiario.",
             _make_net_income_per_benef_chart(per_beneficiary),
         ),
         (
             "Siniestralidad total (%)",
-            "Promedio ponderado Senasa vs resto del sistema. Los valores del resto ya no colapsan a cero.",
+            "Relación siniestros/ingresos calculada con los flujos anteriores. Sirve para comparar la intensidad asistencial relativa entre Senasa y el agregado privado.",
             _make_siniestralidad_total(metrics),
         ),
         (
             "Siniestralidad por régimen (%)",
-            "Serie mensual de Senasa por régimen; el resto del sistema se referencia en el panel de siniestralidad total.",
+            "Desglose que Senasa publica por régimen. Las ARS privadas no informan este split, por lo que sólo se grafica Senasa y el agregado se interpreta en el panel anterior.",
             _make_siniestralidad_regimen(metrics),
         ),
         (
             "Reservas técnicas vs invertidas (Millones DOP)",
-            "Comparación de reservas constituidas y las invertidas para cada grupo.",
+            "Stocks de reservas técnicas y el monto efectivamente invertido según EF2; dimensiona el respaldo financiero de cada bloque.",
             _make_reserve_levels(metrics),
         ),
         (
             "Cobertura de reservas sobre cuentas por pagar",
-            "Un ratio por encima de 1 indica reservas suficientes para cubrir obligaciones con prestadores.",
+            "Indicador de liquidez estructural: un valor superior a 1 implica que las reservas técnicas cubren las cuentas por pagar a prestadores (PSS).",
             _make_payables_ratio(metrics),
         ),
         (
             "Gap de reservas (Millones DOP)",
-            "Brecha entre reservas técnicas requeridas e invertidas.",
+            "Brecha entre reservas técnicas requeridas y las invertidas. Valores positivos señalan déficit a financiar con liquidez adicional.",
             _make_reserve_gap(metrics),
         ),
     ]
