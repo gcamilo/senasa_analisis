@@ -68,9 +68,60 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
     )
 
     subset = subset.with_columns(
-        (pl.col("_total_income_adj") - pl.col("_total_income_adj").shift(1).over("year"))
-        .fill_null(pl.col("_total_income_adj"))
-        .alias("_monthly_income_raw")
+        pl.col("_total_income_adj").fill_null(strategy="forward").shift(1).over("year").alias(
+            "_total_income_prev"
+        ),
+        pl.col("net_income_total").fill_null(strategy="forward").shift(1).over("year").alias(
+            "_net_income_total_prev"
+        ),
+        pl.col("net_income_contributivo").fill_null(strategy="forward").shift(1).over("year").alias(
+            "_net_income_contrib_prev"
+        ),
+        pl.col("net_income_subsidiado").fill_null(strategy="forward").shift(1).over("year").alias(
+            "_net_income_subsid_prev"
+        ),
+        pl.col("net_income_plan").fill_null(strategy="forward").shift(1).over("year").alias(
+            "_net_income_plan_prev"
+        ),
+    )
+
+    subset = subset.with_columns(
+        (pl.col("_total_income_adj") - pl.col("_total_income_prev")).alias("_monthly_income_raw"),
+        (pl.col("net_income_total") - pl.col("_net_income_total_prev")).alias(
+            "_net_income_monthly_raw"
+        ),
+        (pl.col("net_income_contributivo") - pl.col("_net_income_contrib_prev")).alias(
+            "_net_income_contrib_monthly_raw"
+        ),
+        (pl.col("net_income_subsidiado") - pl.col("_net_income_subsid_prev")).alias(
+            "_net_income_subsid_monthly_raw"
+        ),
+        (pl.col("net_income_plan") - pl.col("_net_income_plan_prev")).alias(
+            "_net_income_plan_monthly_raw"
+        ),
+    )
+
+    subset = subset.with_columns(
+        pl.when(pl.col("_monthly_income_raw").is_null() & pl.col("_total_income_adj").is_not_null())
+        .then(pl.col("_total_income_adj"))
+        .otherwise(pl.col("_monthly_income_raw"))
+        .alias("_monthly_income_raw"),
+        pl.when(pl.col("_net_income_monthly_raw").is_null() & pl.col("net_income_total").is_not_null())
+        .then(pl.col("net_income_total"))
+        .otherwise(pl.col("_net_income_monthly_raw"))
+        .alias("_net_income_monthly_raw"),
+        pl.when(pl.col("_net_income_contrib_monthly_raw").is_null() & pl.col("net_income_contributivo").is_not_null())
+        .then(pl.col("net_income_contributivo"))
+        .otherwise(pl.col("_net_income_contrib_monthly_raw"))
+        .alias("_net_income_contrib_monthly_raw"),
+        pl.when(pl.col("_net_income_subsid_monthly_raw").is_null() & pl.col("net_income_subsidiado").is_not_null())
+        .then(pl.col("net_income_subsidiado"))
+        .otherwise(pl.col("_net_income_subsid_monthly_raw"))
+        .alias("_net_income_subsid_monthly_raw"),
+        pl.when(pl.col("_net_income_plan_monthly_raw").is_null() & pl.col("net_income_plan").is_not_null())
+        .then(pl.col("net_income_plan"))
+        .otherwise(pl.col("_net_income_plan_monthly_raw"))
+        .alias("_net_income_plan_monthly_raw"),
     )
 
     subset = subset.with_columns(
@@ -78,21 +129,6 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
         .then(None)
         .otherwise(pl.col("_monthly_income_raw"))
         .alias("monthly_income"),
-    )
-
-    subset = subset.with_columns(
-        (pl.col("net_income_total") - pl.col("net_income_total").shift(1).over("year"))
-        .fill_null(pl.col("net_income_total"))
-        .alias("_net_income_monthly_raw"),
-        (pl.col("net_income_contributivo") - pl.col("net_income_contributivo").shift(1).over("year"))
-        .fill_null(pl.col("net_income_contributivo"))
-        .alias("_net_income_contrib_monthly_raw"),
-        (pl.col("net_income_subsidiado") - pl.col("net_income_subsidiado").shift(1).over("year"))
-        .fill_null(pl.col("net_income_subsidiado"))
-        .alias("_net_income_subsid_monthly_raw"),
-        (pl.col("net_income_plan") - pl.col("net_income_plan").shift(1).over("year"))
-        .fill_null(pl.col("net_income_plan"))
-        .alias("_net_income_plan_monthly_raw"),
     )
 
     subset = subset.with_columns(
@@ -159,11 +195,16 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
         "year",
         "_total_income_clean",
         "_total_income_adj",
+        "_total_income_prev",
         "_monthly_income_raw",
         "_net_income_monthly_raw",
         "_net_income_contrib_monthly_raw",
         "_net_income_subsid_monthly_raw",
         "_net_income_plan_monthly_raw",
+        "_net_income_total_prev",
+        "_net_income_contrib_prev",
+        "_net_income_subsid_prev",
+        "_net_income_plan_prev",
     ])
 
     return subset
@@ -198,6 +239,42 @@ def _prepare_rest_panel(df: pl.DataFrame) -> pl.DataFrame:
             .then(None)
             .otherwise(pl.col("_claims_cum") / pl.col("total_income") * 100)
             .alias("siniestrality_total"),
+            pl.when(pl.col("total_income") <= 0)
+            .then(None)
+            .otherwise(pl.col("net_income_total"))
+            .alias("net_income_total"),
+            pl.when(pl.col("total_income") <= 0)
+            .then(None)
+            .otherwise(pl.col("net_income_contributivo"))
+            .alias("net_income_contributivo"),
+            pl.when(pl.col("total_income") <= 0)
+            .then(None)
+            .otherwise(pl.col("net_income_subsidiado"))
+            .alias("net_income_subsidiado"),
+            pl.when(pl.col("total_income") <= 0)
+            .then(None)
+            .otherwise(pl.col("net_income_plan"))
+            .alias("net_income_plan"),
+            pl.when(pl.col("total_income") <= 0)
+            .then(None)
+            .otherwise(pl.col("technical_reserves"))
+            .alias("technical_reserves"),
+            pl.when(pl.col("total_income") <= 0)
+            .then(None)
+            .otherwise(pl.col("invested_reserves"))
+            .alias("invested_reserves"),
+            pl.when(pl.col("total_income") <= 0)
+            .then(None)
+            .otherwise(pl.col("reserve_gap"))
+            .alias("reserve_gap"),
+            pl.when(pl.col("total_income") <= 0)
+            .then(None)
+            .otherwise(pl.col("retained_earnings"))
+            .alias("retained_earnings"),
+            pl.when(pl.col("total_income") <= 0)
+            .then(None)
+            .otherwise(pl.col("accounts_payable_pss"))
+            .alias("accounts_payable_pss"),
             pl.lit(None).cast(pl.Float64).alias("siniestrality_contributivo"),
             pl.lit(None).cast(pl.Float64).alias("siniestrality_subsidiado"),
         )
