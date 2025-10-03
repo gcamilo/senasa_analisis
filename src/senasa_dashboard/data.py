@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 import polars as pl
+import polars.selectors as cs
 
 ENTITY_SENASA: Literal["ARS SENASA"] = "ARS SENASA"
 ENTITY_TOTAL: Literal["TOTAL GENERAL"] = "TOTAL GENERAL"
@@ -73,7 +74,7 @@ def _densify_and_interpolate(panel: pl.DataFrame, *, entity: str, base: pl.DataF
     dense = pl.DataFrame({"date": all_dates.cast(pl.Datetime("ns"))})
     panel = dense.join(panel, on="date", how="left")
 
-    numeric_cols = [col for col, dtype in panel.schema.items() if dtype.is_numeric()]
+    numeric_cols = panel.select(cs.numeric()).columns
 
     panel = panel.with_columns(
         [pl.col(col).interpolate().alias(col) for col in numeric_cols]
