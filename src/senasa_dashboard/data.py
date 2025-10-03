@@ -56,8 +56,13 @@ def _rename_with_prefix(df: pl.DataFrame, prefix: str) -> pl.DataFrame:
     return df.rename(mapping)
 
 
-def _densify_and_interpolate(panel: pl.DataFrame, *, entity: str) -> pl.DataFrame:
-    valid = panel.filter(pl.col("monthly_income").is_not_null())
+def _densify_and_interpolate(panel: pl.DataFrame, *, entity: str, base: pl.DataFrame | None = None) -> pl.DataFrame:
+    if base is not None:
+        valid = base.filter(pl.col("monthly_income").is_not_null())
+        if valid.height == 0:
+            valid = panel.filter(pl.col("monthly_income").is_not_null())
+    else:
+        valid = panel.filter(pl.col("monthly_income").is_not_null())
     if valid.height == 0:
         return panel
 
@@ -223,6 +228,41 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
         (pl.col("reserve_gap") / 1e6).alias("reserve_gap_mm"),
         (pl.col("retained_earnings") / 1e6).alias("retained_mm"),
         (pl.col("accounts_payable_pss") / 1e6).alias("accounts_payable_mm"),
+    )
+
+    null_guard_cols = [
+        "monthly_claims",
+        "monthly_claims_mm",
+        "monthly_margin",
+        "monthly_margin_mm",
+        "net_income_monthly",
+        "net_income_monthly_mm",
+        "net_income_contrib_monthly",
+        "net_income_contrib_monthly_mm",
+        "net_income_subsid_monthly",
+        "net_income_subsid_monthly_mm",
+        "net_income_plan_monthly",
+        "net_income_plan_monthly_mm",
+        "monthly_claims_pct",
+        "siniestrality_total",
+        "reserves_to_payables",
+        "technical_reserves",
+        "technical_reserves_mm",
+        "invested_reserves",
+        "invested_mm",
+        "reserve_gap",
+        "reserve_gap_mm",
+        "retained_earnings",
+        "retained_mm",
+        "accounts_payable_pss",
+        "accounts_payable_mm",
+    ]
+
+    subset = subset.with_columns(
+        [
+            pl.when(pl.col("monthly_income").is_null()).then(None).otherwise(pl.col(col)).alias(col)
+            for col in null_guard_cols
+        ]
     )
 
     subset = subset.with_columns(
@@ -482,7 +522,7 @@ def build_monthly_metrics(data_root: Path | str = Path("data/processed")) -> pl.
         .sort("date")
     )
 
-    rest = _densify_and_interpolate(rest, entity=ENTITY_REST)
+    rest = _densify_and_interpolate(rest, entity=ENTITY_REST, base=rest_from_derived)
 
     senasa_final = senasa.select(
         pl.lit(ENTITY_SENASA).alias("entity"),
