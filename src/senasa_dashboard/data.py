@@ -367,6 +367,12 @@ def _compute_rest_from_totals(senasa: pl.DataFrame, total: pl.DataFrame) -> pl.D
         (pl.col("accounts_payable_pss") / 1e6).alias("accounts_payable_mm"),
     )
 
+    rest = rest.with_columns(
+        pl.when(pl.col("monthly_claims").is_null()).then(None).otherwise(pl.col("reserves_to_payables")).alias(
+            "reserves_to_payables"
+        )
+    )
+
     rest = rest.select(
         "entity",
         "date",

@@ -729,7 +729,7 @@ def _make_siniestralidad_regimen(df: pl.DataFrame) -> go.Figure:
             x=senasa.get_column("date").to_list(),
             y=senasa.get_column("siniestrality_subsidiado").to_list(),
             mode="lines+markers",
-            line=dict(color=REGIMEN_COLORS["Subsidiado"], dash="solid"),
+            line=dict(color=REGIMEN_COLORS["Subsidiado"], dash="dash"),
             name="Subsidiado",
         )
     )
