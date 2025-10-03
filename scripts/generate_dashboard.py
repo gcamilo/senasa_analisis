@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Literal
 
 import polars as pl
 import plotly.graph_objects as go
@@ -27,10 +27,11 @@ PAGES: list[dict[str, object]] = [
         "title": "Visión general",
         "include_summary": True,
         "sections": [
-            "income",
-            "claims",
-            "sector_net",
+            "net_income_cumulative",
+            "patrimonio",
             "sini_total",
+            "net_income_per_benef",
+            "sector_net",
         ],
     },
     {
@@ -49,9 +50,9 @@ PAGES: list[dict[str, object]] = [
         "title": "Foco Senasa",
         "include_summary": False,
         "sections": [
+            "income",
+            "claims",
             "net_income",
-            "net_income_cumulative",
-            "net_income_per_benef",
             "senasa_regimen",
         ],
     },
@@ -59,7 +60,7 @@ PAGES: list[dict[str, object]] = [
 
 ENTITY_COLORS = {
     "ARS SENASA": "#1f77b4",
-    "RESTO INDUSTRIA": "#ff7f0e",
+    "RESTO ARS": "#ff7f0e",
 }
 
 REGIMEN_COLORS = {
@@ -69,18 +70,18 @@ REGIMEN_COLORS = {
 
 ENTITY_LINE_STYLE = {
     "ARS SENASA": "solid",
-    "RESTO INDUSTRIA": "dash",
+    "RESTO ARS": "dash",
 }
 
 PER_BENEF_COLORS = {
     "Senasa (Subsidiado)": "#1f77b4",
     "Senasa (Contributivo)": "#2ca02c",
-    "Resto (Contributivo)": "#ff7f0e",
+    "Resto ARS (Contributivo)": "#ff7f0e",
 }
 
 ENTITY_DISPLAY = {
     ENTITY_SENASA: "Sector público (ARS Senasa)",
-    ENTITY_REST: "Sector privado",
+    ENTITY_REST: "Sector privado (Resto ARS)",
 }
 
 SECTOR_COMPONENTS = [
@@ -269,7 +270,7 @@ def build_kpi_cards_html(metrics: pl.DataFrame) -> str:
                     "date": income_period_label,
                 },
                 {
-                    "label": "Resto industria",
+                    "label": "Resto ARS",
                     "value": _format_bn_from_mm(rest_income_sum),
                     "date": income_period_label,
                 },
@@ -292,7 +293,7 @@ def build_kpi_cards_html(metrics: pl.DataFrame) -> str:
                     "date": income_period_label,
                 },
                 {
-                    "label": "Resto industria",
+                    "label": "Resto ARS",
                     "value": f"{_format_number(rest_sini_avg, 2)}%" if rest_sini_avg is not None else "—",
                     "date": income_period_label,
                 },
@@ -320,12 +321,12 @@ def build_kpi_cards_html(metrics: pl.DataFrame) -> str:
                     "date": _format_date(senasa_subsid_date),
                 },
                 {
-                    "label": "Resto · Contributivo",
+                    "label": "Resto ARS · Contributivo",
                     "value": _format_mm_currency(rest_contrib),
                     "date": _format_date(rest_contrib_date),
                 },
                 {
-                    "label": "Resto · Subsidiado",
+                    "label": "Resto ARS · Subsidiado",
                     "value": _format_mm_currency(rest_subsid),
                     "date": _format_date(rest_subsid_date),
                 },
@@ -348,7 +349,7 @@ def build_kpi_cards_html(metrics: pl.DataFrame) -> str:
                     "date": _format_date(senasa_gap_date),
                 },
                 {
-                    "label": "Resto industria",
+                    "label": "Resto ARS",
                     "value": f"{_format_number(rest_gap, 2)}%" if rest_gap is not None else "—",
                     "date": _format_date(rest_gap_date),
                 },
@@ -434,13 +435,13 @@ def build_net_income_per_beneficiary(
     )
 
     resto = (
-        joined.filter(pl.col("entity") == "RESTO INDUSTRIA")
+        joined.filter(pl.col("entity") == "RESTO ARS")
         .with_columns(
             pl.when(pl.col("regimen_contributivo") > 0)
             .then(pl.col("net_income_contrib_monthly") / pl.col("regimen_contributivo"))
             .otherwise(None)
             .alias("value"),
-            pl.lit("Resto (Contributivo)").alias("category"),
+            pl.lit("Resto ARS (Contributivo)").alias("category"),
         )
         .select("date", "value", "category")
     )
@@ -552,29 +553,34 @@ def _make_sector_net_income_chart(df: pl.DataFrame) -> go.Figure:
         bargap=0.25,
         updatemenus=[
             {
+                "type": "buttons",
                 "buttons": [
-                {
-                    "label": "Todos",
-                    "method": "update",
-                    "args": [{"visible": entity_masks["Todos"]}, {}],
-                },
-                {
-                    "label": "ARS Senasa",
-                    "method": "update",
-                    "args": [{"visible": entity_masks[ENTITY_SENASA]}, {}],
-                },
-                {
-                    "label": "Resto industria",
-                    "method": "update",
-                    "args": [{"visible": entity_masks[ENTITY_REST]}, {}],
-                },
+                    {
+                        "label": "Todos",
+                        "method": "update",
+                        "args": [{"visible": entity_masks["Todos"]}, {}],
+                    },
+                    {
+                        "label": "ARS Senasa",
+                        "method": "update",
+                        "args": [{"visible": entity_masks[ENTITY_SENASA]}, {}],
+                    },
+                    {
+                        "label": "Resto ARS",
+                        "method": "update",
+                        "args": [{"visible": entity_masks[ENTITY_REST]}, {}],
+                    },
                 ],
-                "direction": "down",
+                "direction": "left",
                 "showactive": True,
                 "x": 0.0,
                 "y": 1.18,
+                "xanchor": "left",
+                "yanchor": "top",
+                "pad": {"t": 0, "r": 12},
             },
             {
+                "type": "buttons",
                 "buttons": [
                     {
                         "label": "Todos",
@@ -597,10 +603,13 @@ def _make_sector_net_income_chart(df: pl.DataFrame) -> go.Figure:
                         "args": [{"y": regime_arrays["Planes especiales"]}, {}],
                     },
                 ],
-                "direction": "down",
+                "direction": "left",
                 "showactive": True,
-                "x": 0.25,
+                "x": 0.42,
                 "y": 1.18,
+                "xanchor": "left",
+                "yanchor": "top",
+                "pad": {"t": 0, "r": 12},
             },
         ],
     )
@@ -618,7 +627,7 @@ def _make_sector_net_income_chart(df: pl.DataFrame) -> go.Figure:
             ),
             dict(
                 text="Régimen",
-                x=0.25,
+                x=0.42,
                 xref="paper",
                 y=1.22,
                 yref="paper",
@@ -638,7 +647,7 @@ def _make_net_income_chart(df: pl.DataFrame) -> go.Figure:
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.07,
-        subplot_titles=("ARS Senasa", "Resto industria"),
+        subplot_titles=("ARS Senasa", "Resto ARS"),
     )
 
     for row, (entity, color) in enumerate(ENTITY_COLORS.items(), start=1):
@@ -686,6 +695,27 @@ def _make_net_income_cumulative(df: pl.DataFrame) -> go.Figure:
         hovertemplate="%{fullData.name}<br>%{x|%Y-%m}<br>%{y:,.2f} Millones DOP<extra></extra>"
     )
     fig.update_layout(title="Resultado neto acumulado (Millones DOP)")
+    return _format_figure(fig, y_title="Millones DOP")
+
+
+def _make_patrimonio_chart(df: pl.DataFrame) -> go.Figure:
+    ordered = df.sort("date")
+    fig = go.Figure()
+    for entity, color in ENTITY_COLORS.items():
+        entity_df = ordered.filter(pl.col("entity") == entity)
+        fig.add_trace(
+            go.Scatter(
+                x=entity_df.get_column("date").to_list(),
+                y=entity_df.get_column("retained_mm").to_list(),
+                mode="lines+markers",
+                line=dict(color=color, dash=ENTITY_LINE_STYLE.get(entity, "solid")),
+                name=entity,
+            )
+        )
+    fig.update_traces(
+        hovertemplate="%{fullData.name}<br>%{x|%Y-%m}<br>%{y:,.2f} Millones DOP<extra></extra>"
+    )
+    fig.update_layout(title="Patrimonio (Millones DOP)")
     return _format_figure(fig, y_title="Millones DOP")
 
 
@@ -935,7 +965,7 @@ def _render_html(
     parts.extend(
         [
             f"<h1>{header_text}</h1>",
-            "<p class=\"caption\">Series mensuales reconstruidas a partir de los EF2 (Situación Financiera) publicados por SISALRIL. Senasa se toma de su propio estado y el resto de la industria agrupa todas las ARS privadas. Las cuentas de resultado se expresan como flujo mensual, mientras que las partidas patrimoniales permanecen como stocks. Meses en cero indican periodos aún no auditados.</p>",
+            "<p class=\"caption\">Series mensuales reconstruidas a partir de los EF2 (Situación Financiera) publicados por SISALRIL. Senasa se toma de su propio estado y el bloque Resto ARS agrupa todas las ARS privadas. Las cuentas de resultado se expresan como flujo mensual, mientras que las partidas patrimoniales permanecen como stocks. Meses en cero indican periodos aún no auditados.</p>",
         ]
     )
 
@@ -997,6 +1027,11 @@ def main() -> None:
             "caption": "Saldo acumulado de utilidades reportado en EF2; ilustra la trayectoria anual al sumar cada mes transcurrido.",
             "figure": _make_net_income_cumulative(metrics),
         },
+        "patrimonio": {
+            "title": "Patrimonio (Millones DOP)",
+            "caption": "Patrimonio (retained earnings) reportado en EF2; muestra la capacidad de absorción de pérdidas.",
+            "figure": _make_patrimonio_chart(metrics),
+        },
         "net_income_per_benef": {
             "title": "Resultado neto por afiliado",
             "caption": "Resultado mensual dividido entre la base de afiliados del régimen correspondiente (SISALRIL). Permite medir rentabilidad relativa por beneficiario.",
@@ -1004,7 +1039,7 @@ def main() -> None:
         },
         "sini_total": {
             "title": "Siniestralidad total (%)",
-            "caption": "Relación siniestros/ingresos calculada con los flujos anteriores. El trazo punteado identifica al resto de la industria.",
+            "caption": "Siniestralidad total se calcula como siniestros estimados sobre ingresos del mes; un ratio por encima de 100% indica que el flujo de primas no alcanza para cubrir el gasto asistencial. El trazo punteado identifica al Resto ARS.",
             "figure": _make_siniestralidad_total(metrics),
         },
         "reserves": {

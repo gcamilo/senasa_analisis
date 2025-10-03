@@ -55,7 +55,9 @@ Use `make help` if a `Makefile` is present for shortcuts.
 
 ## Dashboard Styling & Data Decisions (2025-XX)
 - Metrics pipeline merges grouped EF2 dataset with derived monthly parquet; when grouped data has gaps, fallback/interpolated values from the derived series fill them, and single-month gaps interpolate between surrounding observations.
-- `RESTO INDUSTRIA` monthly flows come from derived parquet when available; `TOTAL GENERAL - ARS SENASA` fallback is used only where derived data is missing; we densify/interpolate to keep timelines contiguous.
+- `RESTO ARS` monthly flows come from derived parquet when available; `TOTAL GENERAL - ARS SENASA` fallback is used only where derived data is missing; we densify/interpolate to keep timelines contiguous.
+- ARS Senasa series now densify before export so downstream charts inherit interpolated siniestralidad/ingresos in los meses faltantes.
+- Ignoramos mediciones de siniestralidad >300% y mensualidades iniciales con flujo <RD$10 MM (ej. mayo-2021) para evitar outliers de parsing.
 - KPI cards replace the summary table, showing Jan–Nov 2024 aggregated ingreso totals, average siniestralidad, latest net income by plan (Senasa + Rest), gap de reservas pct, and Senasa patrimonio peak-to-trough drawdown.
 - Drawdown computation only considers dates up to the last month with non-null Senasa monthly income, excluding zero placeholders beyond Nov-2024.
 - Line chart styling uses solid Senasa vs dashed Rest traces for all Senasa vs Rest comparisons; reserve gap now charted as % of reserves.

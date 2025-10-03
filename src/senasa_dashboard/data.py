@@ -10,7 +10,15 @@ import polars.selectors as cs
 
 ENTITY_SENASA: Literal["ARS SENASA"] = "ARS SENASA"
 ENTITY_TOTAL: Literal["TOTAL GENERAL"] = "TOTAL GENERAL"
-ENTITY_REST: Literal["RESTO INDUSTRIA"] = "RESTO INDUSTRIA"
+ENTITY_REST: Literal["RESTO ARS"] = "RESTO ARS"
+
+DERIVED_ENTITY_MAP = {
+    "RESTO INDUSTRIA": ENTITY_REST,
+    "TOTAL GENERAL - ARS SENASA": ENTITY_TOTAL,
+}
+
+MIN_VALID_MONTHLY_INCOME = 1e7
+MAX_REASONABLE_SINIESTRALITY = 300.0
 
 
 def _read_grouped_dataset(data_root: Path | str) -> pl.DataFrame:
@@ -49,7 +57,10 @@ def _read_derived_dataset(data_root: Path | str) -> pl.DataFrame:
     path = data_root / "senasa_market_metrics_derived.parquet"
     if not path.exists():
         raise FileNotFoundError(f"Expected dataset not found: {path}")
-    return pl.read_parquet(path)
+    df = pl.read_parquet(path)
+    if "entity" not in df.columns:
+        raise ValueError(f"Derived dataset {path} is missing the 'entity' column")
+    return df.with_columns(pl.col("entity").replace(DERIVED_ENTITY_MAP).alias("entity"))
 
 
 def _rename_with_prefix(df: pl.DataFrame, prefix: str) -> pl.DataFrame:
@@ -165,7 +176,15 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
     )
 
     subset = subset.with_columns(
-        pl.when((pl.col("_monthly_income_raw") <= 0) | pl.col("_monthly_income_raw").is_null())
+        pl.when(
+            (pl.col("_monthly_income_raw") <= 0)
+            | pl.col("_monthly_income_raw").is_null()
+            | (
+                pl.col("_prev_income_missing")
+                & pl.col("_monthly_income_raw").is_not_null()
+                & (pl.col("_monthly_income_raw") < MIN_VALID_MONTHLY_INCOME)
+            )
+        )
         .then(None)
         .otherwise(pl.col("_monthly_income_raw"))
         .alias("monthly_income"),
@@ -188,6 +207,16 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
         .then(None)
         .otherwise(pl.col("_net_income_plan_monthly_raw"))
         .alias("net_income_plan_monthly"),
+    )
+
+    subset = subset.with_columns(
+        pl.when(
+            pl.col("siniestrality_total").is_not_null()
+            & (pl.col("siniestrality_total") > MAX_REASONABLE_SINIESTRALITY)
+        )
+        .then(None)
+        .otherwise(pl.col("siniestrality_total"))
+        .alias("siniestrality_total"),
     )
 
     subset = subset.with_columns(
@@ -257,6 +286,14 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
         "retained_mm",
         "accounts_payable_pss",
         "accounts_payable_mm",
+        "net_income_total",
+        "net_income_total_mm",
+        "net_income_contributivo",
+        "net_income_contributivo_mm",
+        "net_income_subsidiado",
+        "net_income_subsidiado_mm",
+        "net_income_plan",
+        "net_income_plan_mm",
     ]
 
     subset = subset.with_columns(
@@ -264,27 +301,6 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
             pl.when(pl.col("monthly_income").is_null()).then(None).otherwise(pl.col(col)).alias(col)
             for col in null_guard_cols
         ]
-    )
-
-    subset = subset.with_columns(
-        pl.when(pl.col("_prev_income_missing")).then(None).otherwise(pl.col("monthly_claims")).alias(
-            "monthly_claims"
-        ),
-        pl.when(pl.col("_prev_income_missing")).then(None).otherwise(pl.col("monthly_claims_mm")).alias(
-            "monthly_claims_mm"
-        ),
-        pl.when(pl.col("_prev_income_missing")).then(None).otherwise(pl.col("monthly_margin")).alias(
-            "monthly_margin"
-        ),
-        pl.when(pl.col("_prev_income_missing")).then(None).otherwise(pl.col("monthly_margin_mm")).alias(
-            "monthly_margin_mm"
-        ),
-        pl.when(pl.col("_prev_income_missing")).then(None).otherwise(pl.col("monthly_claims_pct")).alias(
-            "monthly_claims_pct"
-        ),
-        pl.when(pl.col("_prev_income_missing")).then(None).otherwise(pl.col("siniestrality_total")).alias(
-            "siniestrality_total"
-        ),
     )
 
     subset = subset.drop([
@@ -490,10 +506,10 @@ def build_monthly_metrics(data_root: Path | str = Path("data/processed")) -> pl.
         .sort("date")
     )
 
-    senasa_for_rest = _densify_and_interpolate(senasa, entity=ENTITY_SENASA)
+    senasa_dense = _densify_and_interpolate(senasa, entity=ENTITY_SENASA)
 
     total = _prepare_entity_panel(grouped, ENTITY_TOTAL)
-    rest_from_totals = _compute_rest_from_totals(senasa_for_rest, total)
+    rest_from_totals = _compute_rest_from_totals(senasa_dense, total)
     rest_from_derived = _prepare_entity_panel(derived, ENTITY_REST)
 
     target_columns = rest_from_derived.columns
@@ -543,7 +559,7 @@ def build_monthly_metrics(data_root: Path | str = Path("data/processed")) -> pl.
 
     rest = _densify_and_interpolate(rest, entity=ENTITY_REST, base=rest_from_derived)
 
-    senasa_final = senasa.select(
+    senasa_final = senasa_dense.select(
         pl.lit(ENTITY_SENASA).alias("entity"),
         "date",
         "monthly_income",

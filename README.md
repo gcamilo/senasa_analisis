@@ -21,6 +21,16 @@ Este repositorio contiene la canalización de datos y el tablero estático que r
    Esto actualiza `reports/senasa_dashboard.html` y `data/processed/senasa_dashboard_metrics.parquet`.
 3. Copiar el HTML a `docs/index.html` si se desea publicar mediante GitHub Pages.
 
+### Pruebas
+
+Instala `pytest` en el entorno virtual y ejecuta:
+
+```bash
+PYTHONPATH=src python -m pytest tests -q
+```
+
+Las pruebas validan que no existan huecos de siniestralidad con ingresos presentes y levantan alertas cuando los ingresos del Resto ARS presentan saltos anómalos.
+
 ## Publicación automática
 - El workflow de GitHub Actions (`.github/workflows/deploy.yml`) reconstruye el tablero en cada push a `main` y despliega `docs/index.html` en GitHub Pages.
 - Versión publicada: [https://gcamilo.github.io/senasa_analisis/](https://gcamilo.github.io/senasa_analisis/)
