@@ -58,23 +58,6 @@ SECTOR_COMPONENT_COLORS = {
     (ENTITY_REST, "Planes especiales"): "#ffa64d",
 }
 
-SUMMARY_METRICS = [
-    ("monthly_income_mm", "Ingresos mensuales (Millones DOP)", "mm"),
-    ("monthly_margin_mm", "Margen mensual (Millones DOP)", "mm"),
-    ("monthly_claims_pct", "Siniestros / Ingresos (%)", "pct"),
-    ("net_income_monthly_mm", "Resultado neto mensual (Millones DOP)", "mm"),
-    ("net_income_contrib_monthly_mm", "Resultado neto contrib. (Millones DOP)", "mm"),
-    ("net_income_subsid_monthly_mm", "Resultado neto subsidiado (Millones DOP)", "mm"),
-    ("siniestrality_total", "Siniestralidad total (%)", "pct"),
-    ("siniestrality_contributivo", "Siniestralidad contrib. (%)", "pct"),
-    ("siniestrality_subsidiado", "Siniestralidad subsidiado (%)", "pct"),
-    ("technical_reserves_mm", "Reservas técnicas (Millones DOP)", "mm"),
-    ("invested_mm", "Reservas invertidas (Millones DOP)", "mm"),
-    ("reserve_gap_mm", "Gap de reservas (Millones DOP)", "mm"),
-    ("reserves_to_payables", "Reservas / CxP", "ratio"),
-]
-
-
 def _latest_metric(metrics: pl.DataFrame, entity: str, column: str) -> tuple[str | None, float | None]:
     df = (
         metrics.filter(pl.col("entity") == entity)
@@ -119,68 +102,239 @@ def _format_date(date: str | None) -> str:
     return str(date)
 
 
-def build_summary_html(metrics: pl.DataFrame) -> str:
-    comparative_rows: list[dict[str, str]] = []
-    senasa_rows: list[dict[str, str]] = []
+def _format_bn_from_mm(value_mm: float | None) -> str:
+    if value_mm is None:
+        return "—"
+    return f"RD$ {_format_number(value_mm / 1_000, 2)} Bn"
 
-    for column, label, fmt in SUMMARY_METRICS:
-        senasa_date, senasa_val = _latest_metric(metrics, ENTITY_SENASA, column)
-        rest_date, rest_val = _latest_metric(metrics, ENTITY_REST, column)
 
-        if senasa_val is None and rest_val is None:
-            continue
+def _format_mm_currency(value_mm: float | None) -> str:
+    if value_mm is None:
+        return "—"
+    return f"RD$ {_format_number(value_mm, 2)} MM"
 
-        if senasa_val is None:
-            continue
 
-        senasa_display = f"{_format_value(senasa_val, fmt)} ({_format_date(senasa_date)})"
+def _build_kpi_list(items: list[dict[str, str]]) -> str:
+    lines = []
+    for item in items:
+        label = item.get("label", "")
+        value = item.get("value", "—")
+        date = item.get("date")
+        date_html = f"<small>{date}</small>" if date else ""
+        lines.append(f"<li><span>{label}</span><strong>{value}</strong>{date_html}</li>")
+    return "".join(lines)
 
-        if rest_val is not None:
-            rest_display = f"{_format_value(rest_val, fmt)} ({_format_date(rest_date)})"
-            comparative_rows.append(
+
+def _compute_peak_to_trough(metrics: pl.DataFrame) -> tuple[float | None, str | None, str | None]:
+    income_valid = (
+        metrics.filter((pl.col("entity") == ENTITY_SENASA) & pl.col("monthly_income").is_not_null())
+        .select(pl.col("date").max().alias("max_date"))
+    )
+
+    if income_valid.height == 0 or income_valid.get_column("max_date")[0] is None:
+        return None, None, None
+
+    max_valid_date = income_valid.get_column("max_date")[0]
+
+    series = (
+        metrics.filter(pl.col("entity") == ENTITY_SENASA)
+        .filter(pl.col("date") <= max_valid_date)
+        .select("date", "retained_earnings")
+        .drop_nulls("retained_earnings")
+        .sort("date")
+    )
+    if series.height == 0:
+        return None, None, None
+
+    max_so_far = None
+    peak_date = trough_date = None
+    peak_value = trough_value = None
+    drawdown = 0.0
+
+    for row in series.iter_rows(named=True):
+        date = row["date"]
+        value = row["retained_earnings"]
+
+        if max_so_far is None or value > max_so_far:
+            max_so_far = value
+            peak_value = value
+            peak_date = date
+
+        if max_so_far is not None:
+            current_drawdown = max_so_far - value
+            if current_drawdown > drawdown:
+                drawdown = current_drawdown
+                trough_value = value
+                trough_date = date
+
+    if drawdown <= 0 or peak_date is None or trough_date is None:
+        return None, None, None
+
+    return drawdown, _format_date(peak_date), _format_date(trough_date)
+
+
+def build_kpi_cards_html(metrics: pl.DataFrame) -> str:
+    def _sum_income_2024(entity: str) -> float | None:
+        subset = metrics.filter(
+            (pl.col("entity") == entity)
+            & (pl.col("date").dt.year() == 2024)
+            & (pl.col("date").dt.month() <= 11)
+            & pl.col("monthly_income_mm").is_not_null()
+        )
+        if subset.height == 0:
+            return None
+        return subset.get_column("monthly_income_mm").sum()
+
+    def _avg_sini_2024(entity: str) -> float | None:
+        subset = metrics.filter(
+            (pl.col("entity") == entity)
+            & (pl.col("date").dt.year() == 2024)
+            & (pl.col("date").dt.month() <= 11)
+            & pl.col("siniestrality_total").is_not_null()
+        )
+        if subset.height == 0:
+            return None
+        return subset.get_column("siniestrality_total").mean()
+
+    senasa_income_sum = _sum_income_2024(ENTITY_SENASA)
+    rest_income_sum = _sum_income_2024(ENTITY_REST)
+    income_period_label = "2024 Ene-Nov"
+
+    senasa_sini_avg = _avg_sini_2024(ENTITY_SENASA)
+    rest_sini_avg = _avg_sini_2024(ENTITY_REST)
+
+    senasa_contrib_date, senasa_contrib = _latest_metric(metrics, ENTITY_SENASA, "net_income_contrib_monthly_mm")
+    senasa_subsid_date, senasa_subsid = _latest_metric(metrics, ENTITY_SENASA, "net_income_subsid_monthly_mm")
+    rest_contrib_date, rest_contrib = _latest_metric(metrics, ENTITY_REST, "net_income_contrib_monthly_mm")
+    rest_subsid_date, rest_subsid = _latest_metric(metrics, ENTITY_REST, "net_income_subsid_monthly_mm")
+
+    senasa_gap_date, senasa_gap = _latest_metric(metrics, ENTITY_SENASA, "reserve_gap_pct")
+    rest_gap_date, rest_gap = _latest_metric(metrics, ENTITY_REST, "reserve_gap_pct")
+
+    drawdown, peak_date, trough_date = _compute_peak_to_trough(metrics)
+
+    cards: list[str] = []
+
+    # Ingreso mensual
+    cards.append(
+        "<div class=\"kpi-card\">"
+        "<h3>Ingreso mensual</h3>"
+        "<p class=\"kpi-caption\">Suma enero-noviembre 2024 (RD$ Billones).</p>"
+        "<ul class=\"kpi-list\">"
+        + _build_kpi_list(
+            [
                 {
-                    "metric": label,
-                    "senasa": senasa_display,
-                    "rest": rest_display,
-                }
-            )
-        else:
-            senasa_rows.append(
+                    "label": "ARS Senasa",
+                    "value": _format_bn_from_mm(senasa_income_sum),
+                    "date": income_period_label,
+                },
                 {
-                    "metric": label,
-                    "senasa": senasa_display,
-                }
-            )
+                    "label": "Resto industria",
+                    "value": _format_bn_from_mm(rest_income_sum),
+                    "date": income_period_label,
+                },
+            ]
+        )
+        + "</ul></div>"
+    )
 
-    if not comparative_rows and not senasa_rows:
+    # Siniestralidad total
+    cards.append(
+        "<div class=\"kpi-card\">"
+        "<h3>Siniestralidad total</h3>"
+        "<p class=\"kpi-caption\">Promedio enero-noviembre 2024.</p>"
+        "<ul class=\"kpi-list\">"
+        + _build_kpi_list(
+            [
+                {
+                    "label": "ARS Senasa",
+                    "value": f"{_format_number(senasa_sini_avg, 2)}%" if senasa_sini_avg is not None else "—",
+                    "date": income_period_label,
+                },
+                {
+                    "label": "Resto industria",
+                    "value": f"{_format_number(rest_sini_avg, 2)}%" if rest_sini_avg is not None else "—",
+                    "date": income_period_label,
+                },
+            ]
+        )
+        + "</ul></div>"
+    )
+
+    # Resultado neto por plan
+    cards.append(
+        "<div class=\"kpi-card\">"
+        "<h3>Resultado neto por plan</h3>"
+        "<p class=\"kpi-caption\">Valores mensuales en RD$ MM.</p>"
+        "<ul class=\"kpi-list\">"
+        + _build_kpi_list(
+            [
+                {
+                    "label": "Senasa · Contributivo",
+                    "value": _format_mm_currency(senasa_contrib),
+                    "date": _format_date(senasa_contrib_date),
+                },
+                {
+                    "label": "Senasa · Subsidiado",
+                    "value": _format_mm_currency(senasa_subsid),
+                    "date": _format_date(senasa_subsid_date),
+                },
+                {
+                    "label": "Resto · Contributivo",
+                    "value": _format_mm_currency(rest_contrib),
+                    "date": _format_date(rest_contrib_date),
+                },
+                {
+                    "label": "Resto · Subsidiado",
+                    "value": _format_mm_currency(rest_subsid),
+                    "date": _format_date(rest_subsid_date),
+                },
+            ]
+        )
+        + "</ul></div>"
+    )
+
+    # Gap de reservas sobre reservas totales
+    cards.append(
+        "<div class=\"kpi-card\">"
+        "<h3>Gap de reservas / reservas técnicas</h3>"
+        "<p class=\"kpi-caption\">Brecha como porcentaje de reservas técnicas.</p>"
+        "<ul class=\"kpi-list\">"
+        + _build_kpi_list(
+            [
+                {
+                    "label": "ARS Senasa",
+                    "value": f"{_format_number(senasa_gap, 2)}%" if senasa_gap is not None else "—",
+                    "date": _format_date(senasa_gap_date),
+                },
+                {
+                    "label": "Resto industria",
+                    "value": f"{_format_number(rest_gap, 2)}%" if rest_gap is not None else "—",
+                    "date": _format_date(rest_gap_date),
+                },
+            ]
+        )
+        + "</ul></div>"
+    )
+
+    # Peak to trough patrimonio Senasa
+    cards.append(
+        "<div class=\"kpi-card\">"
+        "<h3>Drawdown patrimonio Senasa</h3>"
+        "<p class=\"kpi-caption\">Máxima caída histórica de patrimonio (retained earnings).</p>"
+        + (
+            "<div class=\"kpi-highlight\">"
+            f"<strong>{'RD$ ' + _format_number(drawdown / 1e9, 2) + ' Bn' if drawdown else '—'}</strong>"
+            f"<small>{'Pico ' + peak_date + ' · Valle ' + trough_date if drawdown and peak_date and trough_date else ''}</small>"
+            "</div>"
+        )
+        + "</div>"
+    )
+
+    if not cards:
         return ""
 
-    parts: list[str] = ["<section>", "<h2>Resumen de indicadores</h2>"]
-
-    if comparative_rows:
-        parts.extend([
-            "<p class=\"caption\">Métricas con cobertura para Senasa y el resto del sistema (último dato disponible).</p>",
-            "<table class=\"summary\"><thead><tr><th>Métrica</th><th>Senasa</th><th>Resto industria</th></tr></thead><tbody>",
-        ])
-        for row in comparative_rows:
-            parts.append(
-                f"<tr><td class=\"metric\">{row['metric']}</td><td>{row['senasa']}</td><td>{row['rest']}</td></tr>"
-            )
-        parts.append("</tbody></table>")
-
-    if senasa_rows:
-        parts.extend([
-            "<p class=\"caption\">Indicadores reportados únicamente por Senasa.</p>",
-            "<table class=\"summary\"><thead><tr><th>Métrica</th><th>Senasa</th></tr></thead><tbody>",
-        ])
-        for row in senasa_rows:
-            parts.append(
-                f"<tr><td class=\"metric\">{row['metric']}</td><td>{row['senasa']}</td></tr>"
-            )
-        parts.append("</tbody></table>")
-
-    parts.append("</section>")
-    return "".join(parts)
+    return "<section><h2>Indicadores clave</h2><div class=\"kpi-grid\">" + "".join(cards) + "</div></section>"
 
 
 def load_affiliations(data_root: Path) -> pl.DataFrame:
@@ -296,6 +450,8 @@ def _make_sector_net_income_chart(df: pl.DataFrame) -> go.Figure:
     )
 
     fig = go.Figure()
+    trace_meta: list[dict[str, str]] = []
+    original_y: list[list[float]] = []
 
     for entity in (ENTITY_SENASA, ENTITY_REST):
         entity_df = filtered.filter(pl.col("entity") == entity)
@@ -304,17 +460,20 @@ def _make_sector_net_income_chart(df: pl.DataFrame) -> go.Figure:
         display_name = ENTITY_DISPLAY.get(entity, entity)
         offsetgroup = "public" if entity == ENTITY_SENASA else "private"
 
+        dates = entity_df.get_column("date").to_list()
+
         for column, label in SECTOR_COMPONENTS:
             if column not in entity_df.columns:
                 continue
             series = entity_df.get_column(column)
             if series.null_count() == series.len():
                 continue
+            y_values = series.fill_null(0).to_list()
             color = SECTOR_COMPONENT_COLORS.get((entity, label), ENTITY_COLORS.get(entity, "#888888"))
             fig.add_trace(
                 go.Bar(
-                    x=entity_df.get_column("date").to_list(),
-                    y=series.fill_null(0).to_list(),
+                    x=dates,
+                    y=y_values,
                     name=f"{display_name} · {label}",
                     legendgroup=display_name,
                     offsetgroup=offsetgroup,
@@ -324,12 +483,111 @@ def _make_sector_net_income_chart(df: pl.DataFrame) -> go.Figure:
                     ),
                 )
             )
+            trace_meta.append({"entity": entity, "regime": label})
+            original_y.append(y_values)
+
+    if not trace_meta:
+        return _format_figure(fig, y_title="RD$ MM")
+
+    n_traces = len(trace_meta)
+
+    entity_masks = {
+        "Todos": [True] * n_traces,
+        ENTITY_SENASA: [meta["entity"] == ENTITY_SENASA for meta in trace_meta],
+        ENTITY_REST: [meta["entity"] == ENTITY_REST for meta in trace_meta],
+    }
+
+    regime_arrays: dict[str, list[list[float]]] = {"Todos": original_y}
+    zeros = [[0.0] * len(y) for y in original_y]
+
+    for _, regime in SECTOR_COMPONENTS:
+        regime_arrays[regime] = [
+            y if meta["regime"] == regime else zeros[idx]
+            for idx, (meta, y) in enumerate(zip(trace_meta, original_y))
+        ]
 
     fig.update_layout(
         barmode="relative",
         title="Resultado neto mensual por sector",
         bargap=0.25,
+        updatemenus=[
+            {
+                "buttons": [
+                {
+                    "label": "Todos",
+                    "method": "update",
+                    "args": [{"visible": entity_masks["Todos"]}, {}],
+                },
+                {
+                    "label": "ARS Senasa",
+                    "method": "update",
+                    "args": [{"visible": entity_masks[ENTITY_SENASA]}, {}],
+                },
+                {
+                    "label": "Resto industria",
+                    "method": "update",
+                    "args": [{"visible": entity_masks[ENTITY_REST]}, {}],
+                },
+                ],
+                "direction": "down",
+                "showactive": True,
+                "x": 0.0,
+                "y": 1.18,
+            },
+            {
+                "buttons": [
+                    {
+                        "label": "Todos",
+                        "method": "update",
+                        "args": [{"y": regime_arrays["Todos"]}, {}],
+                    },
+                    {
+                        "label": "Contributivo",
+                        "method": "update",
+                        "args": [{"y": regime_arrays["Contributivo"]}, {}],
+                    },
+                    {
+                        "label": "Subsidiado",
+                        "method": "update",
+                        "args": [{"y": regime_arrays["Subsidiado"]}, {}],
+                    },
+                    {
+                        "label": "Planes especiales",
+                        "method": "update",
+                        "args": [{"y": regime_arrays["Planes especiales"]}, {}],
+                    },
+                ],
+                "direction": "down",
+                "showactive": True,
+                "x": 0.25,
+                "y": 1.18,
+            },
+        ],
     )
+
+    fig.update_layout(
+        annotations=[
+            dict(
+                text="Entidad",
+                x=0.0,
+                xref="paper",
+                y=1.22,
+                yref="paper",
+                showarrow=False,
+                font=dict(size=12),
+            ),
+            dict(
+                text="Régimen",
+                x=0.25,
+                xref="paper",
+                y=1.22,
+                yref="paper",
+                showarrow=False,
+                font=dict(size=12),
+            ),
+        ]
+    )
+
     return _format_figure(fig, y_title="RD$ MM")
 
 
@@ -362,6 +620,7 @@ def _make_net_income_chart(df: pl.DataFrame) -> go.Figure:
     fig.update_layout(
         title="Resultado neto mensual (Millones DOP)",
         bargap=0.15,
+        showlegend=False,
     )
     fig.update_yaxes(title="Millones DOP", row=1, col=1)
     fig.update_yaxes(title="Millones DOP", row=2, col=1)
@@ -379,7 +638,7 @@ def _make_net_income_cumulative(df: pl.DataFrame) -> go.Figure:
                 x=entity_df.get_column("date").to_list(),
                 y=entity_df.get_column("net_income_total_mm").to_list(),
                 mode="lines+markers",
-                line=dict(color=color),
+                line=dict(color=color, dash=ENTITY_LINE_STYLE.get(entity, "solid")),
                 name=entity,
             )
         )
@@ -451,7 +710,7 @@ def _make_reserve_levels(df: pl.DataFrame) -> go.Figure:
                 x=subset.get_column("date").to_list(),
                 y=subset.get_column("technical_reserves_mm").to_list(),
                 mode="lines",
-                line=dict(color=color),
+                line=dict(color=color, dash=ENTITY_LINE_STYLE.get(entity, "solid")),
                 name=f"Reservas técnicas - {entity}",
             )
         )
@@ -460,7 +719,10 @@ def _make_reserve_levels(df: pl.DataFrame) -> go.Figure:
                 x=subset.get_column("date").to_list(),
                 y=subset.get_column("invested_mm").to_list(),
                 mode="lines",
-                line=dict(color=color, dash="dot"),
+                line=dict(
+                    color=color,
+                    dash="dot" if entity == ENTITY_SENASA else "dashdot",
+                ),
                 name=f"Reservas invertidas - {entity}",
             )
         )
@@ -481,7 +743,7 @@ def _make_payables_ratio(df: pl.DataFrame) -> go.Figure:
                 x=subset.get_column("date").to_list(),
                 y=subset.get_column("reserves_to_payables").to_list(),
                 mode="lines+markers",
-                line=dict(color=color),
+                line=dict(color=color, dash=ENTITY_LINE_STYLE.get(entity, "solid")),
                 name=entity,
             )
         )
@@ -500,17 +762,17 @@ def _make_reserve_gap(df: pl.DataFrame) -> go.Figure:
         fig.add_trace(
             go.Scatter(
                 x=subset.get_column("date").to_list(),
-                y=subset.get_column("reserve_gap_mm").to_list(),
+                y=subset.get_column("reserve_gap_pct").to_list(),
                 mode="lines+markers",
-                line=dict(color=color),
+                line=dict(color=color, dash=ENTITY_LINE_STYLE.get(entity, "solid")),
                 name=entity,
             )
         )
     fig.update_traces(
-        hovertemplate="%{fullData.name}<br>%{x|%Y-%m}<br>%{y:,.2f} Millones DOP<extra></extra>"
+        hovertemplate="%{fullData.name}<br>%{x|%Y-%m}<br>%{y:,.2f}%<extra></extra>"
     )
-    fig.update_layout(title="Gap de reservas (Millones DOP)")
-    return _format_figure(fig, y_title="Millones DOP")
+    fig.update_layout(title="Gap de reservas (% de reservas técnicas)")
+    return _format_figure(fig, y_title="%")
 
 
 def _fig_to_html(fig: go.Figure) -> str:
@@ -558,7 +820,10 @@ def _make_net_income_per_benef_chart(df: pl.DataFrame) -> go.Figure:
                 x=subset.get_column("date").to_list(),
                 y=subset.get_column("value").to_list(),
                 mode="lines",
-                line=dict(color=color),
+                line=dict(
+                    color=color,
+                    dash="dash" if "Resto" in category else "solid",
+                ),
                 name=category,
             )
         )
@@ -590,6 +855,19 @@ def _render_html(
         "table.summary th, table.summary td { border: 1px solid #e0e0e0; padding: 6px 10px; text-align: left; font-size: 0.95rem; }",
         "table.summary th { background: #f5f7fa; font-weight: 600; }",
         "table.summary td.metric { width: 40%; }",
+        ".kpi-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 1rem; }",
+        ".kpi-card { background: #f5f7fa; border-radius: 12px; padding: 18px; box-shadow: inset 0 0 0 1px #e2e8f0; }",
+        ".kpi-card h3 { margin: 0 0 8px; font-size: 1.05rem; color: #1a202c; }",
+        ".kpi-caption { font-size: 0.8rem; color: #4a5568; margin: 0 0 12px; }",
+        ".kpi-list { list-style: none; padding: 0; margin: 0; }",
+        ".kpi-list li { display: flex; flex-direction: column; margin-bottom: 10px; }",
+        ".kpi-list li span { font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: #4a5568; }",
+        ".kpi-list li strong { font-size: 1.2rem; color: #1a202c; }",
+        ".kpi-list li small { font-size: 0.7rem; color: #718096; margin-top: 2px; }",
+        ".kpi-card .kpi-highlight { display: flex; flex-direction: column; gap: 4px; }",
+        ".kpi-card .kpi-highlight strong { font-size: 1.4rem; color: #1a202c; }",
+        ".kpi-card .kpi-highlight small { font-size: 0.75rem; color: #4a5568; }",
+
         "</style>",
         "<title>ARS Senasa vs resto del sistema</title>",
         "</head>",
@@ -619,7 +897,7 @@ def main() -> None:
 
     affiliations = load_affiliations(DATA_ROOT)
     per_beneficiary = build_net_income_per_beneficiary(metrics, affiliations)
-    summary_html = build_summary_html(metrics)
+    summary_html = build_kpi_cards_html(metrics)
 
     sections = [
         (
@@ -659,13 +937,8 @@ def main() -> None:
         ),
         (
             "Siniestralidad total (%)",
-            "Relación siniestros/ingresos calculada con los flujos anteriores. Sirve para comparar la intensidad asistencial relativa entre Senasa y el agregado privado.",
+            "Relación siniestros/ingresos calculada con los flujos anteriores. El trazo punteado identifica al resto de la industria.",
             _make_siniestralidad_total(metrics),
-        ),
-        (
-            "Siniestralidad por régimen (%)",
-            "Desglose que Senasa publica por régimen. Las ARS privadas no informan este split, por lo que sólo se grafica Senasa y el agregado se interpreta en el panel anterior.",
-            _make_siniestralidad_regimen(metrics),
         ),
         (
             "Reservas técnicas vs invertidas (Millones DOP)",
@@ -678,11 +951,19 @@ def main() -> None:
             _make_payables_ratio(metrics),
         ),
         (
-            "Gap de reservas (Millones DOP)",
-            "Brecha entre reservas técnicas requeridas y las invertidas. Valores positivos señalan déficit a financiar con liquidez adicional.",
+            "Gap de reservas (% de reservas técnicas)",
+            "Brecha entre reservas técnicas requeridas e invertidas expresada como % de reservas técnicas.",
             _make_reserve_gap(metrics),
         ),
     ]
+
+    sections.append(
+        (
+            "Senasa: siniestralidad por régimen (%)",
+            "Serie mensual publicada por Senasa para los regímenes contributivo y subsidiado. Las ARS privadas no reportan este detalle.",
+            _make_siniestralidad_regimen(metrics),
+        )
+    )
 
     html = _render_html(sections, summary_html)
     REPORT_PATH.write_text(html, encoding="utf-8")
