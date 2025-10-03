@@ -509,10 +509,10 @@ def build_monthly_metrics(data_root: Path | str = Path("data/processed")) -> pl.
 
     rest_candidates = pl.concat(
         [
+            rest_from_derived.with_columns(pl.lit(0).alias("priority")),
             rest_from_totals.with_columns(
-                pl.when(pl.col("monthly_income").is_null()).then(2).otherwise(0).alias("priority")
+                pl.when(pl.col("monthly_income").is_null()).then(2).otherwise(1).alias("priority")
             ),
-            rest_from_derived.with_columns(pl.lit(1).alias("priority")),
         ]
     )
 
