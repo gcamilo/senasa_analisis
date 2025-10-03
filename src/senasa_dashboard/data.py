@@ -507,9 +507,27 @@ def build_monthly_metrics(data_root: Path | str = Path("data/processed")) -> pl.
     rest_from_totals = rest_from_totals.select(target_columns)
     rest_from_derived = rest_from_derived.select(target_columns)
 
+    fallback_lookup = rest_from_totals.select(
+        pl.col("date"), pl.col("monthly_income").alias("__fallback_income")
+    )
+
+    rest_derived_with_quality = rest_from_derived.join(
+        fallback_lookup, on="date", how="left"
+    ).with_columns(
+        pl.when(pl.col("monthly_income").is_null())
+        .then(2)
+        .when(
+            (pl.col("__fallback_income").is_not_null())
+            & (pl.col("monthly_income") > pl.col("__fallback_income") * 3)
+        )
+        .then(2)
+        .otherwise(0)
+        .alias("priority")
+    ).drop("__fallback_income")
+
     rest_candidates = pl.concat(
         [
-            rest_from_derived.with_columns(pl.lit(0).alias("priority")),
+            rest_derived_with_quality,
             rest_from_totals.with_columns(
                 pl.when(pl.col("monthly_income").is_null()).then(2).otherwise(1).alias("priority")
             ),
