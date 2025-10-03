@@ -66,8 +66,8 @@ def _densify_and_interpolate(panel: pl.DataFrame, *, entity: str, base: pl.DataF
     if valid.height == 0:
         return panel
 
-    min_date = valid.select(pl.col("date").min())[0]
-    max_date = valid.select(pl.col("date").max())[0]
+    min_date = valid.select(pl.col("date").min().alias("min"))["min"][0]
+    max_date = valid.select(pl.col("date").max().alias("max"))["max"][0]
     all_dates = pl.date_range(min_date, max_date, interval="1mo", eager=True)
 
     dense = pl.DataFrame({"date": all_dates.cast(pl.Datetime("ns"))})
