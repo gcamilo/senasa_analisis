@@ -407,7 +407,7 @@ def load_affiliations(data_root: Path) -> pl.DataFrame:
 def build_net_income_per_beneficiary(
     metrics: pl.DataFrame, affiliations: pl.DataFrame
 ) -> pl.DataFrame:
-    joined = metrics.join(affiliations, on="date", how="left", coalesce=True)
+    joined = metrics.join(affiliations, on="date", how="left")
 
     senasa = (
         joined.filter(pl.col("entity") == "ARS SENASA")
