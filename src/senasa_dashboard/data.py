@@ -90,7 +90,7 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
     )
 
     subset = subset.with_columns(
-        pl.col("_total_income_clean").cum_max().over("year").alias("_total_income_adj")
+        pl.col("_total_income_clean").cummax().over("year").alias("_total_income_adj")
     )
 
     subset = subset.with_columns(
