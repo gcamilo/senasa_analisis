@@ -23,6 +23,7 @@ Este repositorio contiene la canalización de datos y el tablero estático que r
 
 ## Publicación automática
 - El workflow de GitHub Actions (`.github/workflows/deploy.yml`) reconstruye el tablero en cada push a `main` y despliega `docs/index.html` en GitHub Pages.
+- Versión publicada: [https://gcamilo.github.io/senasa_analisis/](https://gcamilo.github.io/senasa_analisis/)
 - Los datos necesarios para la generación se almacenan en `data/processed/` (agregados sin información sensible).
 
 ## Estructura relevante

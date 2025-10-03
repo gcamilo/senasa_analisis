@@ -16,6 +16,8 @@ PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.27.0.min.js"
 DATA_ROOT = Path("data/processed")
 REPORT_PATH = Path("reports/senasa_dashboard.html")
 METRICS_PATH = DATA_ROOT / "senasa_dashboard_metrics.parquet"
+GITHUB_REPO_URL = "https://github.com/gcamilo/senasa_analisis"
+PAGES_URL = "https://gcamilo.github.io/senasa_analisis/"
 
 ENTITY_COLORS = {
     "ARS SENASA": "#1f77b4",
@@ -887,6 +889,11 @@ def _render_html(
         parts.append(_fig_to_html(fig))
         parts.append("</section>")
 
+    parts.append(
+        "<footer style=\"margin-top:48px;font-size:0.85rem;color:#4a5568;\">"
+        f"Fuente: SISALRIL. Código y datos: <a href=\"{GITHUB_REPO_URL}\" target=\"_blank\">GitHub</a>."
+        "</footer>"
+    )
     parts.append("</body></html>")
     return "".join(parts)
 
