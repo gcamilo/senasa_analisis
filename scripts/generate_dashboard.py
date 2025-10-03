@@ -14,10 +14,48 @@ from senasa_dashboard.data import ENTITY_REST, ENTITY_SENASA
 
 PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.27.0.min.js"
 DATA_ROOT = Path("data/processed")
-REPORT_PATH = Path("reports/senasa_dashboard.html")
+REPORT_DIR = Path("reports")
+DOCS_DIR = Path("docs")
+OVERVIEW_SLUG: Literal["index"] = "index"
 METRICS_PATH = DATA_ROOT / "senasa_dashboard_metrics.parquet"
 GITHUB_REPO_URL = "https://github.com/gcamilo/senasa_analisis"
 PAGES_URL = "https://gcamilo.github.io/senasa_analisis/"
+
+PAGES: list[dict[str, object]] = [
+    {
+        "slug": OVERVIEW_SLUG,
+        "title": "Visión general",
+        "include_summary": True,
+        "sections": [
+            "income",
+            "claims",
+            "sector_net",
+            "sini_total",
+        ],
+    },
+    {
+        "slug": "sistema",
+        "title": "Sistema SFS",
+        "include_summary": False,
+        "sections": [
+            "affiliations",
+            "reserves",
+            "payables_ratio",
+            "reserve_gap",
+        ],
+    },
+    {
+        "slug": "senasa",
+        "title": "Foco Senasa",
+        "include_summary": False,
+        "sections": [
+            "net_income",
+            "net_income_cumulative",
+            "net_income_per_benef",
+            "senasa_regimen",
+        ],
+    },
+]
 
 ENTITY_COLORS = {
     "ARS SENASA": "#1f77b4",
@@ -839,7 +877,10 @@ def _make_net_income_per_benef_chart(df: pl.DataFrame) -> go.Figure:
 
 def _render_html(
     sections: Iterable[tuple[str, str | None, go.Figure]],
+    *,
     summary_html: str | None = None,
+    nav_links: list[tuple[str, str, bool]] | None = None,
+    page_title: str = "Visión general",
 ) -> str:
     parts = [
         "<!DOCTYPE html>",
@@ -869,14 +910,34 @@ def _render_html(
         ".kpi-card .kpi-highlight { display: flex; flex-direction: column; gap: 4px; }",
         ".kpi-card .kpi-highlight strong { font-size: 1.4rem; color: #1a202c; }",
         ".kpi-card .kpi-highlight small { font-size: 0.75rem; color: #4a5568; }",
-
+        ".top-nav { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 24px; }",
+        ".top-nav a { text-decoration: none; color: #2d3748; padding: 6px 12px; border-radius: 6px; background: #edf2f7; font-weight: 500; }",
+        ".top-nav a.active { background: #1a202c; color: #fff; }",
+        ".top-nav a:hover { background: #2d3748; color: #fff; }",
         "</style>",
         "<title>ARS Senasa vs resto del sistema</title>",
         "</head>",
         "<body>",
-        "<h1>ARS Senasa vs resto del sistema</h1>",
-        "<p class=\"caption\">Series mensuales reconstruidas a partir de los EF2 (Situación Financiera) publicados por SISALRIL. Senasa se toma de su propio estado y el resto de la industria agrupa todas las ARS privadas. Las cuentas de resultado se expresan como flujo mensual, mientras que las partidas patrimoniales permanecen como stocks. Meses en cero indican periodos aún no auditados.</p>",
     ]
+
+    if nav_links:
+        nav_html = ["<nav class=\"top-nav\">"]
+        for href, label, active in nav_links:
+            class_attr = " class=\"active\"" if active else ""
+            nav_html.append(f"<a href=\"{href}\"{class_attr}>{label}</a>")
+        nav_html.append("</nav>")
+        parts.append("".join(nav_html))
+
+    header_text = "ARS Senasa vs resto del sistema"
+    if page_title and page_title != "Visión general":
+        header_text = f"{header_text} · {page_title}"
+
+    parts.extend(
+        [
+            f"<h1>{header_text}</h1>",
+            "<p class=\"caption\">Series mensuales reconstruidas a partir de los EF2 (Situación Financiera) publicados por SISALRIL. Senasa se toma de su propio estado y el resto de la industria agrupa todas las ARS privadas. Las cuentas de resultado se expresan como flujo mensual, mientras que las partidas patrimoniales permanecen como stocks. Meses en cero indican periodos aún no auditados.</p>",
+        ]
+    )
 
     if summary_html:
         parts.append(summary_html)
@@ -905,75 +966,103 @@ def main() -> None:
     affiliations = load_affiliations(DATA_ROOT)
     per_beneficiary = build_net_income_per_beneficiary(metrics, affiliations)
     summary_html = build_kpi_cards_html(metrics)
+    section_map = {
+        "income": {
+            "title": "Ingresos mensuales (Bn DOP)",
+            "caption": "Flujo mensual de ingresos por capitación tomado de los EF2. El agregado privado suma todas las ARS y corrige el rezago que mezclaba enero y febrero de 2024.",
+            "figure": _make_grouped_bar(metrics, "monthly_income_mm", title="Ingresos mensuales (Bn DOP)", y_label="Bn DOP"),
+        },
+        "claims": {
+            "title": "Siniestros mensuales (Bn DOP)",
+            "caption": "Costo mensual estimado como ingresos × siniestralidad declarada. Permite contrastar la presión asistencial frente al flujo de primas en cada bloque.",
+            "figure": _make_grouped_bar(metrics, "monthly_claims_mm", title="Siniestros mensuales (Bn DOP)", y_label="Bn DOP"),
+        },
+        "sector_net": {
+            "title": "Resultado neto mensual por sector",
+            "caption": "Fuentes: REPÚBLICA DOMINICANA: INDICADORES FINANCIEROS DE LAS ARS PÚBLICAS/1 y Régimen Contributivo. El apilado muestra cómo cada régimen explica las ganancias o pérdidas de Senasa y del agregado privado en cada mes.",
+            "figure": _make_sector_net_income_chart(metrics),
+        },
+        "affiliations": {
+            "title": "Afiliados al SFS",
+            "caption": "Padrones oficiales del Seguro Familiar de Salud; se presentan los millones de beneficiarios en los regímenes subsidiado y contributivo.",
+            "figure": _make_enrollment_chart(affiliations),
+        },
+        "net_income": {
+            "title": "Resultado neto mensual (Millones DOP)",
+            "caption": "Resultado del mes según EF2. Útil para reconocer episodios con pérdidas o ganancias extraordinarias antes de acumulaciones.",
+            "figure": _make_net_income_chart(metrics),
+        },
+        "net_income_cumulative": {
+            "title": "Resultado neto acumulado (Millones DOP)",
+            "caption": "Saldo acumulado de utilidades reportado en EF2; ilustra la trayectoria anual al sumar cada mes transcurrido.",
+            "figure": _make_net_income_cumulative(metrics),
+        },
+        "net_income_per_benef": {
+            "title": "Resultado neto por afiliado",
+            "caption": "Resultado mensual dividido entre la base de afiliados del régimen correspondiente (SISALRIL). Permite medir rentabilidad relativa por beneficiario.",
+            "figure": _make_net_income_per_benef_chart(per_beneficiary),
+        },
+        "sini_total": {
+            "title": "Siniestralidad total (%)",
+            "caption": "Relación siniestros/ingresos calculada con los flujos anteriores. El trazo punteado identifica al resto de la industria.",
+            "figure": _make_siniestralidad_total(metrics),
+        },
+        "reserves": {
+            "title": "Reservas técnicas vs invertidas (Millones DOP)",
+            "caption": "Stocks de reservas técnicas y el monto efectivamente invertido según EF2; dimensiona el respaldo financiero de cada bloque.",
+            "figure": _make_reserve_levels(metrics),
+        },
+        "payables_ratio": {
+            "title": "Cobertura de reservas sobre cuentas por pagar",
+            "caption": "Indicador de liquidez estructural: un valor superior a 1 implica que las reservas técnicas cubren las cuentas por pagar a prestadores (PSS).",
+            "figure": _make_payables_ratio(metrics),
+        },
+        "reserve_gap": {
+            "title": "Gap de reservas (% de reservas técnicas)",
+            "caption": "Brecha entre reservas técnicas requeridas e invertidas expresada como % de reservas técnicas.",
+            "figure": _make_reserve_gap(metrics),
+        },
+        "senasa_regimen": {
+            "title": "Senasa: siniestralidad por régimen (%)",
+            "caption": "Serie mensual publicada por Senasa para los regímenes contributivo y subsidiado. Las ARS privadas no reportan este detalle.",
+            "figure": _make_siniestralidad_regimen(metrics),
+        },
+    }
 
-    sections = [
-        (
-            "Ingresos mensuales (Bn DOP)",
-            "Flujo mensual de ingresos por capitación tomado de los EF2. El agregado privado suma todas las ARS y corrige el rezago que mezclaba enero y febrero de 2024.",
-            _make_grouped_bar(metrics, "monthly_income_mm", title="Ingresos mensuales (Bn DOP)", y_label="Bn DOP"),
-        ),
-        (
-            "Siniestros mensuales (Bn DOP)",
-            "Costo mensual estimado como ingresos × siniestralidad declarada. Permite contrastar la presión asistencial frente al flujo de primas en cada bloque.",
-            _make_grouped_bar(metrics, "monthly_claims_mm", title="Siniestros mensuales (Bn DOP)", y_label="Bn DOP"),
-        ),
-        (
-            "Resultado neto mensual por sector",
-            "Fuentes: REPÚBLICA DOMINICANA: INDICADORES FINANCIEROS DE LAS ARS PÚBLICAS/1 y Régimen Contributivo. El apilado muestra cómo cada régimen (contributivo, subsidiado y planes especiales) explica las ganancias o pérdidas de Senasa y del agregado privado en cada mes.",
-            _make_sector_net_income_chart(metrics),
-        ),
-        (
-            "Afiliados al SFS",
-            "Padrones oficiales del Seguro Familiar de Salud; se presentan los millones de beneficiarios en los regímenes subsidiado y contributivo.",
-            _make_enrollment_chart(affiliations),
-        ),
-        (
-            "Resultado neto mensual (Millones DOP)",
-            "Resultado del mes según EF2. Útil para reconocer episodios con pérdidas o ganancias extraordinarias antes de acumulaciones.",
-            _make_net_income_chart(metrics),
-        ),
-        (
-            "Resultado neto acumulado (Millones DOP)",
-            "Saldo acumulado de utilidades a la fecha reportado en EF2; ilustra la trayectoria anual al sumar cada mes transcurrido.",
-            _make_net_income_cumulative(metrics),
-        ),
-        (
-            "Resultado neto por afiliado",
-            "Resultado mensual dividido entre la base de afiliados del régimen correspondiente (SISALRIL). Permite medir rentabilidad relativa por beneficiario.",
-            _make_net_income_per_benef_chart(per_beneficiary),
-        ),
-        (
-            "Siniestralidad total (%)",
-            "Relación siniestros/ingresos calculada con los flujos anteriores. El trazo punteado identifica al resto de la industria.",
-            _make_siniestralidad_total(metrics),
-        ),
-        (
-            "Reservas técnicas vs invertidas (Millones DOP)",
-            "Stocks de reservas técnicas y el monto efectivamente invertido según EF2; dimensiona el respaldo financiero de cada bloque.",
-            _make_reserve_levels(metrics),
-        ),
-        (
-            "Cobertura de reservas sobre cuentas por pagar",
-            "Indicador de liquidez estructural: un valor superior a 1 implica que las reservas técnicas cubren las cuentas por pagar a prestadores (PSS).",
-            _make_payables_ratio(metrics),
-        ),
-        (
-            "Gap de reservas (% de reservas técnicas)",
-            "Brecha entre reservas técnicas requeridas e invertidas expresada como % de reservas técnicas.",
-            _make_reserve_gap(metrics),
-        ),
-    ]
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
-    sections.append(
-        (
-            "Senasa: siniestralidad por régimen (%)",
-            "Serie mensual publicada por Senasa para los regímenes contributivo y subsidiado. Las ARS privadas no reportan este detalle.",
-            _make_siniestralidad_regimen(metrics),
+    nav_structure = [(page["slug"], page["title"]) for page in PAGES]
+    overview_html = None
+
+    for page in PAGES:
+        slug = str(page["slug"])
+        sections_payload = []
+        for key in page["sections"]:
+            data = section_map[key]
+            sections_payload.append((data["title"], data["caption"], data["figure"]))
+
+        nav_links = []
+        for nav_slug, nav_title in nav_structure:
+            href = "index.html" if nav_slug == OVERVIEW_SLUG else f"{nav_slug}.html"
+            nav_links.append((href, nav_title, nav_slug == slug))
+
+        page_html = _render_html(
+            sections_payload,
+            summary_html=summary_html if page.get("include_summary") else None,
+            nav_links=nav_links,
+            page_title=str(page["title"]),
         )
-    )
 
-    html = _render_html(sections, summary_html)
-    REPORT_PATH.write_text(html, encoding="utf-8")
+        filename = "index.html" if slug == OVERVIEW_SLUG else f"{slug}.html"
+        (REPORT_DIR / filename).write_text(page_html, encoding="utf-8")
+        (DOCS_DIR / filename).write_text(page_html, encoding="utf-8")
+
+        if slug == OVERVIEW_SLUG:
+            overview_html = page_html
+
+    if overview_html is not None:
+        (REPORT_DIR / "senasa_dashboard.html").write_text(overview_html, encoding="utf-8")
 
 
 if __name__ == "__main__":

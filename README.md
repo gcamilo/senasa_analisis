@@ -25,6 +25,7 @@ Este repositorio contiene la canalización de datos y el tablero estático que r
 - El workflow de GitHub Actions (`.github/workflows/deploy.yml`) reconstruye el tablero en cada push a `main` y despliega `docs/index.html` en GitHub Pages.
 - Versión publicada: [https://gcamilo.github.io/senasa_analisis/](https://gcamilo.github.io/senasa_analisis/)
 - Los datos necesarios para la generación se almacenan en `data/processed/` (agregados sin información sensible).
+- Navegación disponible en la versión publicada y en `docs/`: `index.html` (Visión general), `sistema.html` (Sistema SFS) y `senasa.html` (foco ARS Senasa).
 
 ## Estructura relevante
 - `src/senasa_dashboard/data.py`: lógica de ingestión, interpolación y combinación de series (Senasa + resto).
