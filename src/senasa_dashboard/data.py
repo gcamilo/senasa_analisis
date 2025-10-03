@@ -60,7 +60,19 @@ def _read_derived_dataset(data_root: Path | str) -> pl.DataFrame:
     df = pl.read_parquet(path)
     if "entity" not in df.columns:
         raise ValueError(f"Derived dataset {path} is missing the 'entity' column")
-    return df.with_columns(pl.col("entity").replace(DERIVED_ENTITY_MAP).alias("entity"))
+
+    mapping = pl.DataFrame(
+        {
+            "entity": list(DERIVED_ENTITY_MAP.keys()),
+            "entity_mapped": list(DERIVED_ENTITY_MAP.values()),
+        }
+    )
+
+    return (
+        df.join(mapping, on="entity", how="left")
+        .with_columns(pl.coalesce([pl.col("entity_mapped"), pl.col("entity")]).alias("entity"))
+        .drop("entity_mapped")
+    )
 
 
 def _rename_with_prefix(df: pl.DataFrame, prefix: str) -> pl.DataFrame:
@@ -80,10 +92,10 @@ def _densify_and_interpolate(panel: pl.DataFrame, *, entity: str, base: pl.DataF
 
     min_date = valid.select(pl.col("date").min().alias("min"))["min"][0]
     max_date = valid.select(pl.col("date").max().alias("max"))["max"][0]
-    all_dates = pl.date_range(min_date, max_date, interval="1mo", eager=True)
+    all_dates = pl.datetime_range(min_date, max_date, interval="1mo", eager=True)
 
     dense = pl.DataFrame({"date": all_dates.cast(pl.Datetime("ns"))})
-    panel = dense.join(panel, on="date", how="left")
+    panel = dense.join(panel, on="date", how="left", coalesce=True)
 
     numeric_cols = panel.select(cs.numeric()).columns
 
@@ -107,7 +119,7 @@ def _prepare_entity_panel(df: pl.DataFrame, entity: str) -> pl.DataFrame:
     )
 
     subset = subset.with_columns(
-        pl.col("_total_income_clean").cummax().over("year").alias("_total_income_adj")
+        pl.col("_total_income_clean").cum_max().over("year").alias("_total_income_adj")
     )
 
     subset = subset.with_columns(
@@ -528,7 +540,7 @@ def build_monthly_metrics(data_root: Path | str = Path("data/processed")) -> pl.
     )
 
     rest_derived_with_quality = rest_from_derived.join(
-        fallback_lookup, on="date", how="left"
+        fallback_lookup, on="date", how="left", coalesce=True
     ).with_columns(
         pl.when(pl.col("monthly_income").is_null())
         .then(2)

@@ -1,5 +1,4 @@
 from datetime import datetime
-
 import polars as pl
 import pytest
 
@@ -7,7 +6,6 @@ from senasa_dashboard import build_monthly_metrics
 from senasa_dashboard.data import ENTITY_REST, ENTITY_SENASA
 
 DATA_ROOT = "data/processed"
-
 
 @pytest.fixture(scope="session")
 def metrics() -> pl.DataFrame:
@@ -54,7 +52,7 @@ def test_rest_income_outlier_guardrail(metrics: pl.DataFrame) -> None:
         metrics.filter(pl.col("entity") == ENTITY_REST)
         .sort("date")
         .with_columns(
-            pl.col("monthly_income_mm").rolling_median(window_size=4, min_periods=2).alias(
+            pl.col("monthly_income_mm").rolling_median(window_size=4, min_samples=2).alias(
                 "rolling_median"
             )
         )
