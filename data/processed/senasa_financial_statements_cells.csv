@@ -1,0 +1,200 @@
+pdf,page,table,row,col,value
+Formulario-de-reembolso.pdf,1,1,0,1,Formulario para la solicitud de reembolsos por servicios de salud
+Formulario-de-reembolso.pdf,1,1,1,0,"Tipo de Plan de Salud
+Plan Complementario Máximo.
+Plan Complementario Premium.
+Plan Voluntario. *
+Plan Básico de Salud (PBS). *
+Plan Complementario Especial. *
+Plan Complementario Avanzado. *
+Plan Especial de Pensionados y Jubilados. *
+Accidente de tránsito (FONAMAT). *
+*Solamente cuando aplique y en situaciones
+excepcionales.
+Tipo de pago
+Cheque.
+Transferencia.
+Efectivo."
+Formulario-de-reembolso.pdf,1,1,1,3,"Datos generales para transferencias:
+Nombre:
+Cédula o pasaporte:
+Banco:
+Tipo de cuenta:
+Cuenta número:"
+Formulario-de-reembolso.pdf,1,1,1,4,Caso número:
+Formulario-de-reembolso.pdf,1,1,2,4,Solicitud número:
+Formulario-de-reembolso.pdf,1,1,3,4,Fecha:
+Formulario-de-reembolso.pdf,1,1,4,4,"Sucursal donde realiza la
+solicitud:"
+Formulario-de-reembolso.pdf,1,1,5,4,"Procedencia:
+Correo electrónico.
+Visita Área.
+APP.
+Página Web.
+Otra:"
+Formulario-de-reembolso.pdf,1,1,6,0,Datos generales del afiliado/beneficiario
+Formulario-de-reembolso.pdf,1,1,7,0,"Número de cédula, pasaporte o
+Número de Seguridad Social (NSS):"
+Formulario-de-reembolso.pdf,1,1,8,0,Nombre(s) y apellido(s):
+Formulario-de-reembolso.pdf,1,1,9,0,Régimen:
+Formulario-de-reembolso.pdf,1,1,10,0,Teléfono(s) de contacto :
+Formulario-de-reembolso.pdf,1,1,11,0,Dirección:
+Formulario-de-reembolso.pdf,1,1,12,0,Correo electrónico (Si aplica):
+Formulario-de-reembolso.pdf,1,1,13,0,Datos generales del reclamante
+Formulario-de-reembolso.pdf,1,1,14,0,Número de contacto:
+Formulario-de-reembolso.pdf,1,1,15,0,"Número de cédula, pasaporte o
+Número de Seguridad Social (NSS):"
+Formulario-de-reembolso.pdf,1,1,16,0,Nombre(s) y apellido(s):
+Formulario-de-reembolso.pdf,1,1,17,0,Régimen:
+Formulario-de-reembolso.pdf,1,1,18,0,Parentesco:
+Formulario-de-reembolso.pdf,1,1,19,0,Correo electrónico:
+Formulario-de-reembolso.pdf,1,1,20,1,Datos generales del prestador
+Formulario-de-reembolso.pdf,2,1,0,0,"Número de Registro Nacional de
+Contribuyente (RNC):"
+Formulario-de-reembolso.pdf,2,1,0,2,Datos generales del prestado
+Formulario-de-reembolso.pdf,2,1,1,0,Nombre:
+Formulario-de-reembolso.pdf,2,1,2,0,Contacto:
+Formulario-de-reembolso.pdf,2,1,3,0,Fecha del servicio:
+Formulario-de-reembolso.pdf,2,1,4,0,Servicio a reclamar:
+Formulario-de-reembolso.pdf,2,1,4,2,"Emergencia.
+Internamiento.
+Quimioterapia.
+Honorarios
+médicos."
+Formulario-de-reembolso.pdf,2,1,4,6,"Imágenes.
+Equipo de cirugía.
+Sangre."
+Formulario-de-reembolso.pdf,2,1,4,10,"Laboratorio.
+Materiales.
+Hemodiálisis."
+Formulario-de-reembolso.pdf,2,1,4,14,"Consulta.
+Medicamento
+ambulatorio.
+Otros:"
+Formulario-de-reembolso.pdf,2,1,5,0,Motivo del reclamo:
+Formulario-de-reembolso.pdf,2,1,5,2,"Cobro directo por parte del centro o médico independiente.
+Asistencia en Centro o Médico fuera de red.
+Negación de cobertura por parte de ARS SeNaSa.
+Compra o cobro directo de Sangre.
+Compra directa de materiales.
+Pago de diferencia elevada.
+Compra directa de Medicamentos."
+Formulario-de-reembolso.pdf,2,1,6,0,Documentos depositados:
+Formulario-de-reembolso.pdf,2,1,6,2,"Copia de la cédula del afiliado
+Copia del carné
+Menor de edad: Copia de cédula del titular del plan y del acta de nacimiento del menor
+Copia de la indicación médica, sellada y firmada (Si procede)
+Facturas, recibo de pago, depósito o transferencia a cuenta del médico o centro de
+salud y váucher (Según aplique), (Factura no requiere RNC y/o NCF)."
+Formulario-de-reembolso.pdf,2,1,7,0,"Documentos adicionales en caso
+de que aplique:"
+Formulario-de-reembolso.pdf,2,1,7,2,"Epicrisis o Historial de la enfermedad(solo en hospitalización clínica).
+Historia o Resumen clínico (Solo para prestadores fuera de red).
+Descripción quirúrgica (solo para servicios donde se reclame la cobertura quirúrgica).
+Soportes diagnósticos (Imágenes y/o laboratorios), si aplica.
+Constancia de emergencia.
+Copia de indicación médica (Solo para reclamos de servicios ambulatorios)
+Preautorización del servicio, si aplica."
+Formulario-de-reembolso.pdf,2,1,8,1,Explicación de la solicitud
+Formulario-de-reembolso.pdf,2,1,10,1,Descripción del procedimiento
+Formulario-de-reembolso.pdf,2,1,10,5,RD$ Monto facturado
+Formulario-de-reembolso.pdf,2,1,10,9,RD$ solicitado
+Formulario-de-reembolso.pdf,2,1,10,13,RD$ aprobado
+Formulario-de-reembolso.pdf,3,1,0,1,Título Formulario
+Formulario-de-reembolso.pdf,3,1,0,2,para la solicitud de reem
+Formulario-de-reembolso.pdf,3,1,0,3,bolso por servicios d
+Formulario-de-reembolso.pdf,3,1,0,4,e salud
+Formulario-de-reembolso.pdf,3,1,2,1,Código GSS-FORM
+Formulario-de-reembolso.pdf,3,1,2,2,-003
+Formulario-de-reembolso.pdf,3,1,4,1,Versión 05
+Formulario-de-reembolso.pdf,3,1,4,3,Fecha de aprob
+Formulario-de-reembolso.pdf,3,1,4,4,ación: 21/05/
+Formulario-de-reembolso.pdf,3,1,4,5,2024
+Formulario-de-reembolso.pdf,3,1,6,0,Formulari
+Formulario-de-reembolso.pdf,3,1,6,1,o de autorizac
+Formulario-de-reembolso.pdf,3,1,6,2,ión para pago de
+Formulario-de-reembolso.pdf,3,1,6,3,reembolso po
+Formulario-de-reembolso.pdf,3,1,6,4,r transfer
+Formulario-de-reembolso.pdf,3,1,6,5,encia
+Formulario-de-reembolso.pdf,3,1,8,2,Ciu
+Formulario-de-reembolso.pdf,3,1,8,3,dad
+Formulario-de-reembolso.pdf,3,1,10,2,Fe
+Formulario-de-reembolso.pdf,3,1,10,3,cha
+Formulario-de-reembolso.pdf,3,1,12,0,Señores
+Formulario-de-reembolso.pdf,3,1,14,0,Seguro Nacional de S
+Formulario-de-reembolso.pdf,3,1,14,1,alud - SeNaSa
+Formulario-de-reembolso.pdf,3,1,16,0,Ref.: Autorización par
+Formulario-de-reembolso.pdf,3,1,16,1,a realizar pago de r
+Formulario-de-reembolso.pdf,3,1,16,2,eembolso por transfere
+Formulario-de-reembolso.pdf,3,1,16,3,ncia.
+Formulario-de-reembolso.pdf,3,1,18,0,Estimados señores:
+Formulario-de-reembolso.pdf,3,1,20,0,Por medio de la pres
+Formulario-de-reembolso.pdf,3,1,20,1,"ente, yo,"
+Formulario-de-reembolso.pdf,3,1,20,4,", portador d"
+Formulario-de-reembolso.pdf,3,1,20,5,e la cédula de
+Formulario-de-reembolso.pdf,3,1,22,0,identidad y electora
+Formulario-de-reembolso.pdf,3,1,22,1,l No.
+Formulario-de-reembolso.pdf,3,1,22,3,","
+Formulario-de-reembolso.pdf,3,1,22,4,afiliado al
+Formulario-de-reembolso.pdf,3,1,22,5,Régimen/Plan
+Formulario-de-reembolso.pdf,3,1,24,2,","
+Formulario-de-reembolso.pdf,3,1,24,3,con el Número d
+Formulario-de-reembolso.pdf,3,1,24,4,e Seguridad
+Formulario-de-reembolso.pdf,3,1,24,5,Social (NSS)
+Formulario-de-reembolso.pdf,3,1,26,2,", autorizo a"
+Formulario-de-reembolso.pdf,3,1,26,3,ARS SeNaSa a acr
+Formulario-de-reembolso.pdf,3,1,26,4,editar el mo
+Formulario-de-reembolso.pdf,3,1,26,5,nto resultante
+Formulario-de-reembolso.pdf,3,1,28,0,de la solicitud
+Formulario-de-reembolso.pdf,3,1,28,1,de reembolso
+Formulario-de-reembolso.pdf,3,1,28,2,por servicios
+Formulario-de-reembolso.pdf,3,1,28,3,de salud corr
+Formulario-de-reembolso.pdf,3,1,28,4,espondiente
+Formulario-de-reembolso.pdf,3,1,28,5,al caso
+Formulario-de-reembolso.pdf,3,1,30,2,sometida
+Formulario-de-reembolso.pdf,3,1,30,3,"por mi persona,"
+Formulario-de-reembolso.pdf,3,1,30,4,a la cuent
+Formulario-de-reembolso.pdf,3,1,30,5,a de número
+Formulario-de-reembolso.pdf,3,1,32,2,del banco
+Formulario-de-reembolso.pdf,3,1,32,5,", a"
+Formulario-de-reembolso.pdf,3,1,34,0,nombre del titular de
+Formulario-de-reembolso.pdf,3,1,34,1,l núcleo familiar.
+Formulario-de-reembolso.pdf,3,1,36,0,Declaro que las i
+Formulario-de-reembolso.pdf,3,1,36,1,nformaciones conte
+Formulario-de-reembolso.pdf,3,1,36,2,nidas en esta solicitu
+Formulario-de-reembolso.pdf,3,1,36,3,d son correctas y
+Formulario-de-reembolso.pdf,3,1,36,4,autorizo a
+Formulario-de-reembolso.pdf,3,1,36,5,ARS SeNaSa a
+Formulario-de-reembolso.pdf,3,1,38,0,comprobar su veracid
+Formulario-de-reembolso.pdf,3,1,38,1,ad en la forma que
+Formulario-de-reembolso.pdf,3,1,38,2,estime conveniente.
+Formulario-de-reembolso.pdf,3,1,40,0,En caso de que la info
+Formulario-de-reembolso.pdf,3,1,40,1,rmación provista en
+Formulario-de-reembolso.pdf,3,1,40,2,este formulario conte
+Formulario-de-reembolso.pdf,3,1,40,3,nga algún error par
+Formulario-de-reembolso.pdf,3,1,40,4,a la transfer
+Formulario-de-reembolso.pdf,3,1,40,5,encia bancaria
+Formulario-de-reembolso.pdf,3,1,42,0,SeNaSa no se hace re
+Formulario-de-reembolso.pdf,3,1,42,1,sponsable de la mis
+Formulario-de-reembolso.pdf,3,1,42,2,"ma, la calidad de esta i"
+Formulario-de-reembolso.pdf,3,1,42,3,nformación es resp
+Formulario-de-reembolso.pdf,3,1,42,4,onsabilidad d
+Formulario-de-reembolso.pdf,3,1,42,5,"el solicitante,"
+Formulario-de-reembolso.pdf,3,1,44,0,por lo que ARS SeNa
+Formulario-de-reembolso.pdf,3,1,44,1,Sa solo es respons
+Formulario-de-reembolso.pdf,3,1,44,2,able de realizar la soli
+Formulario-de-reembolso.pdf,3,1,44,3,citud de acuerdo c
+Formulario-de-reembolso.pdf,3,1,44,4,on lo establ
+Formulario-de-reembolso.pdf,3,1,44,5,ecido en este
+Formulario-de-reembolso.pdf,3,1,46,0,documento.
+Formulario-de-reembolso.pdf,3,1,48,0,_________________
+Formulario-de-reembolso.pdf,3,1,48,1,_____________
+Formulario-de-reembolso.pdf,3,1,48,3,_________
+Formulario-de-reembolso.pdf,3,1,48,4,__________
+Formulario-de-reembolso.pdf,3,1,48,5,___________
+Formulario-de-reembolso.pdf,3,1,50,0,Firma del reclam
+Formulario-de-reembolso.pdf,3,1,50,1,ante y fecha
+Formulario-de-reembolso.pdf,3,1,50,3,Firma
+Formulario-de-reembolso.pdf,3,1,50,4,del Auxiliar
+Formulario-de-reembolso.pdf,3,1,50,5,de SeNaSa
+Formulario-de-reembolso.pdf,3,1,52,5,Página 3 de
