@@ -11,6 +11,11 @@ from plotly.subplots import make_subplots
 
 from senasa_dashboard import build_monthly_metrics
 from senasa_dashboard.data import ENTITY_REST, ENTITY_SENASA, ENTITY_TOTAL
+from senasa_dashboard.sfs_series import (
+    load_sfs_coverage,
+    load_sfs_financing,
+    load_sfs_prestaciones,
+)
 
 PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.27.0.min.js"
 DATA_ROOT = Path("data/processed")
@@ -39,7 +44,9 @@ PAGES: list[dict[str, object]] = [
         "title": "Sistema SFS",
         "include_summary": False,
         "sections": [
-            "affiliations",
+            "coverage",
+            "financing",
+            "prestaciones",
             "solvency",
             "dispersion",
             "reserves",
@@ -86,6 +93,12 @@ ENTITY_DISPLAY = {
     ENTITY_SENASA: "Sector público (ARS Senasa)",
     ENTITY_REST: "Sector privado (Resto ARS)",
     ENTITY_TOTAL: "Sistema SFS (Total ARS)",
+}
+
+COVERAGE_COLORS = {
+    "Subsidiado": "#1f77b4",
+    "Contributivo": "#ff7f0e",
+    "Pensionados": "#6baed6",
 }
 
 SECTOR_COMPONENTS = [
@@ -1129,6 +1142,164 @@ def _make_dispersion_chart(df: pl.DataFrame) -> go.Figure:
     return fig
 
 
+def _make_coverage_chart(df: pl.DataFrame) -> go.Figure:
+    ordered = df.sort("date").with_columns(
+        (pl.col("affiliates_subsidiado") / 1e6).alias("subs_mill"),
+        (pl.col("affiliates_contributivo") / 1e6).alias("contrib_mill"),
+        (pl.col("affiliates_pensionados") / 1e6).alias("pensionados_mill"),
+        (pl.col("affiliates_total") / 1e6).alias("affiliates_mill"),
+        (pl.col("population_total") / 1e6).alias("population_mill"),
+    )
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    bars = [
+        ("subs_mill", "Subsidiado"),
+        ("contrib_mill", "Contributivo"),
+        ("pensionados_mill", "Pensionados"),
+    ]
+    dates = ordered.get_column("date").to_list()
+
+    for column, label in bars:
+        if column not in ordered.columns:
+            continue
+        fig.add_trace(
+            go.Bar(
+                x=dates,
+                y=ordered.get_column(column).to_list(),
+                name=f"Afiliados · {label}",
+                marker_color=COVERAGE_COLORS.get(label, "#a0aec0"),
+                hovertemplate=(
+                    f"{label}<br>%{{x|%Y-%m}}<br>%{{y:,.2f}} millones de personas<extra></extra>"
+                ),
+            ),
+            secondary_y=False,
+        )
+
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=ordered.get_column("population_mill").to_list(),
+            name="Población proyectada",
+            mode="lines",
+            line=dict(color="#2ca02c", width=2, dash="dot"),
+            hovertemplate=(
+                "Población proyectada<br>%{x|%Y-%m}<br>%{y:,.2f} millones<extra></extra>"
+            ),
+        ),
+        secondary_y=False,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=ordered.get_column("coverage_pct").to_list(),
+            name="Cobertura del SFS",
+            mode="lines",
+            line=dict(color="#f4971f", width=2.5),
+            hovertemplate=(
+                "Cobertura<br>%{x|%Y-%m}<br>%{y:,.2f}%<extra></extra>"
+            ),
+        ),
+        secondary_y=True,
+    )
+
+    fig.update_layout(barmode="stack", title="Cobertura del SFS vs población")
+    fig = _format_figure(fig)
+    fig.update_yaxes(title_text="Millones de afiliados", secondary_y=False)
+    fig.update_yaxes(title_text="Cobertura (% de población)", secondary_y=True)
+    return fig
+
+
+def _make_financing_chart(df: pl.DataFrame) -> go.Figure:
+    ordered = (
+        df.sort("date")
+        .with_columns(
+            (pl.col("spend_total") / 1e9).alias("spend_total_bn"),
+            (pl.col("gdp_current") / 1e9).alias("gdp_bn"),
+            (pl.col("ratio_total") * 100).alias("ratio_pct"),
+        )
+    )
+
+    dates = ordered.get_column("date").to_list()
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    fig.add_trace(
+        go.Bar(
+            x=dates,
+            y=ordered.get_column("spend_total_bn").to_list(),
+            name="Gasto SFS (RD$ Bn)",
+            marker_color="#90cdf4",
+            hovertemplate="Gasto SFS<br>%{x|%Y}<br>RD$ %{y:,.2f} Bn<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=ordered.get_column("gdp_bn").to_list(),
+            name="PIB (RD$ Bn)",
+            mode="lines",
+            line=dict(color="#2f855a", width=2),
+            hovertemplate="PIB<br>%{x|%Y}<br>RD$ %{y:,.2f} Bn<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=ordered.get_column("ratio_pct").to_list(),
+            name="Gasto SFS / PIB",
+            mode="lines",
+            line=dict(color="#d97706", width=3, dash="dash"),
+            hovertemplate="Participación<br>%{x|%Y}<br>%{y:,.2f}%<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+
+    fig.update_layout(title="Gasto del SFS vs PIB")
+    fig = _format_figure(fig)
+    fig.update_yaxes(title_text="RD$ Billones", secondary_y=False)
+    fig.update_yaxes(title_text="% del PIB", secondary_y=True)
+    return fig
+
+
+def _make_prestaciones_chart(df: pl.DataFrame) -> go.Figure:
+    totals = (
+        df.group_by("group_name")
+        .agg(pl.col("amount").sum().alias("total"))
+        .sort("total", descending=True)
+        .head(6)
+    )
+    top_groups = totals.get_column("group_name").to_list()
+    filtered = (
+        df.filter(pl.col("group_name").is_in(top_groups))
+        .with_columns((pl.col("amount") / 1e9).alias("amount_bn"))
+        .sort(["date", "group_name"])
+    )
+
+    fig = go.Figure()
+    for group in top_groups:
+        subset = filtered.filter(pl.col("group_name") == group)
+        fig.add_trace(
+            go.Bar(
+                x=subset.get_column("date").to_list(),
+                y=subset.get_column("amount_bn").to_list(),
+                name=group,
+                hovertemplate=f"{group}<br>%{{x|%Y}}<br>RD$ %{{y:,.2f}} Bn<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        title="Prestaciones pagadas por componente",
+        barmode="stack",
+    )
+    return _format_figure(fig, y_title="RD$ Billones")
+
+
 def _make_net_income_per_benef_chart(df: pl.DataFrame) -> go.Figure:
     ordered = df.sort(["category", "date"])
     fig = go.Figure()
@@ -1245,6 +1416,9 @@ def main() -> None:
     affiliations = load_affiliations(DATA_ROOT)
     solvency = load_solvency(DATA_ROOT)
     dispersion = load_dispersion(DATA_ROOT)
+    coverage = load_sfs_coverage(DATA_ROOT)
+    financing = load_sfs_financing(DATA_ROOT)
+    prestaciones = load_sfs_prestaciones(DATA_ROOT)
     per_beneficiary = build_net_income_per_beneficiary(metrics, affiliations)
     summary_html = build_kpi_cards_html(metrics)
     section_map = {
@@ -1268,10 +1442,20 @@ def main() -> None:
             "caption": "Fuentes: REPÚBLICA DOMINICANA: INDICADORES FINANCIEROS DE LAS ARS PÚBLICAS/1 y Régimen Contributivo. El apilado muestra cómo cada régimen explica las ganancias o pérdidas de Senasa y del agregado privado en cada mes.",
             "figure": _make_sector_net_income_chart(metrics),
         },
-        "affiliations": {
-            "title": "Afiliados al SFS",
-            "caption": "Padrones oficiales del Seguro Familiar de Salud; se presentan los millones de beneficiarios en los regímenes subsidiado y contributivo.",
-            "figure": _make_enrollment_chart(affiliations),
+        "coverage": {
+            "title": "Cobertura del SFS",
+            "caption": "Padrones oficiales del Seguro Familiar de Salud; compara afiliados por régimen frente a la población proyectada y la tasa de cobertura mensual.",
+            "figure": _make_coverage_chart(coverage),
+        },
+        "financing": {
+            "title": "Gasto del SFS vs PIB",
+            "caption": "Series anuales de SISALRIL sobre el gasto del SFS y su proporción del PIB a precios corrientes.",
+            "figure": _make_financing_chart(financing),
+        },
+        "prestaciones": {
+            "title": "Prestaciones pagadas por componente",
+            "caption": "Montos anuales pagados por el SFS a prestadores, desglosados por los principales grupos de prestaciones.",
+            "figure": _make_prestaciones_chart(prestaciones),
         },
         "solvency": {
             "title": "Solvencia del sistema SFS",

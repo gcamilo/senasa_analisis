@@ -12,6 +12,11 @@ if str(SRC) not in sys.path:
     sys.path.append(str(SRC))
 
 from scripts.generate_dashboard import load_dispersion, load_solvency
+from senasa_dashboard.sfs_series import (
+    load_sfs_coverage,
+    load_sfs_financing,
+    load_sfs_prestaciones,
+)
 
 
 DATA_ROOT = Path("data/processed")
@@ -29,3 +34,22 @@ def test_load_dispersion_has_scaled_columns() -> None:
     df = load_dispersion(DATA_ROOT)
     assert df.select(pl.col("capitas_millones").max()).item() > 0
     assert df.select(pl.col("monto_bn").max()).item() > 0
+
+
+def test_load_sfs_coverage_structure() -> None:
+    df = load_sfs_coverage(DATA_ROOT)
+    assert df.height > 0
+    assert "coverage_pct" in df.columns
+    assert df.select(pl.col("affiliates_total").drop_nulls()).height > 0
+
+
+def test_load_sfs_financing_structure() -> None:
+    df = load_sfs_financing(DATA_ROOT)
+    assert df.height > 0
+    assert df.select(pl.col("ratio_total").drop_nulls()).height > 0
+
+
+def test_load_sfs_prestaciones_structure() -> None:
+    df = load_sfs_prestaciones(DATA_ROOT)
+    assert df.height > 0
+    assert df.select(pl.col("group_name").drop_nulls()).height > 0
