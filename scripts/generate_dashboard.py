@@ -870,12 +870,19 @@ def _make_payables_ratio(df: pl.DataFrame) -> go.Figure:
 
 def _make_solvency_chart(df: pl.DataFrame) -> go.Figure:
     ordered = df.sort(["date", "entity"])
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.1,
+        specs=[[{"secondary_y": True}], [{"secondary_y": False}]],
+    )
 
     color_map = {
         ENTITY_TOTAL: "#2ca02c",
-        ENTITY_SENASA: ENTITY_COLORS[ENTITY_SENASA],
-        ENTITY_REST: ENTITY_COLORS[ENTITY_REST],
+        ENTITY_SENASA: ENTITY_COLORS.get(ENTITY_SENASA, "#1f77b4"),
+        ENTITY_REST: ENTITY_COLORS.get(ENTITY_REST, "#ff7f0e"),
     }
     style_map = {
         ENTITY_TOTAL: "solid",
@@ -883,7 +890,51 @@ def _make_solvency_chart(df: pl.DataFrame) -> go.Figure:
         ENTITY_REST: "dash",
     }
 
-    for entity in (ENTITY_TOTAL, ENTITY_SENASA, ENTITY_REST):
+    total = ordered.filter(pl.col("entity") == ENTITY_TOTAL).drop_nulls("capital_multiple")
+    if total.height > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=total.get_column("date").to_list(),
+                y=total.get_column("capital_multiple").to_list(),
+                mode="lines",
+                line=dict(color=color_map[ENTITY_TOTAL], width=3),
+                name="Sistema SFS · múltiplo",
+                hovertemplate=(
+                    "Sistema SFS<br>%{x|%Y-%m}<br>Múltiplo: %{y:,.2f}x<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=1,
+            secondary_y=False,
+        )
+
+        fig.add_hline(
+            y=1.0,
+            line=dict(color="#4a5568", dash="dash", width=2.5),
+            row=1,
+            col=1,
+            secondary_y=False,
+        )
+
+        system_gap = total.drop_nulls("capital_gap_bn")
+        if system_gap.height > 0:
+            fig.add_trace(
+                go.Bar(
+                    x=system_gap.get_column("date").to_list(),
+                    y=system_gap.get_column("capital_gap_bn").to_list(),
+                    name="Gap de capital (Sistema)",
+                    marker_color="#a0aec0",
+                    opacity=0.45,
+                    hovertemplate=(
+                        "Gap de capital<br>%{x|%Y-%m}<br>RD$ %{y:,.2f} Bn<extra></extra>"
+                    ),
+                ),
+                row=1,
+                col=1,
+                secondary_y=True,
+            )
+
+    for entity in (ENTITY_SENASA, ENTITY_REST):
         subset = ordered.filter(pl.col("entity") == entity).drop_nulls("capital_multiple")
         if subset.height == 0:
             continue
@@ -896,40 +947,16 @@ def _make_solvency_chart(df: pl.DataFrame) -> go.Figure:
                 line=dict(
                     color=color_map.get(entity, "#636363"),
                     dash=style_map.get(entity, "solid"),
-                    width=3 if entity == ENTITY_TOTAL else 2,
+                    width=2,
                 ),
                 name=f"{display_name} · múltiplo",
                 hovertemplate=(
                     f"{display_name}<br>%{{x|%Y-%m}}<br>Múltiplo: %{{y:,.2f}}x<extra></extra>"
                 ),
             ),
-            secondary_y=False,
+            row=2,
+            col=1,
         )
-
-    system_gap = ordered.filter(pl.col("entity") == ENTITY_TOTAL).drop_nulls("capital_gap_bn")
-    if system_gap.height > 0:
-        fig.add_trace(
-            go.Bar(
-                x=system_gap.get_column("date").to_list(),
-                y=system_gap.get_column("capital_gap_bn").to_list(),
-                name="Gap de capital (Sistema)",
-                marker_color="#a0aec0",
-                opacity=0.45,
-                hovertemplate=(
-                    "Sistema SFS<br>%{x|%Y-%m}<br>Gap de capital: RD$ %{y:,.2f} Bn"
-                    "<extra></extra>"
-                ),
-            ),
-            secondary_y=True,
-        )
-
-    fig.add_hline(
-        y=1.0,
-        line=dict(color="#4a5568", dash="dash"),
-        annotation_text="Umbral regulatorio 1x",
-        annotation_position="top left",
-        secondary_y=False,
-    )
 
     fig.update_layout(
         title="Solvencia del sistema SFS",
@@ -937,8 +964,9 @@ def _make_solvency_chart(df: pl.DataFrame) -> go.Figure:
     )
 
     fig = _format_figure(fig)
-    fig.update_yaxes(title_text="Múltiplo de solvencia (x)", secondary_y=False)
-    fig.update_yaxes(title_text="Gap de capital (RD$ Bn)", secondary_y=True)
+    fig.update_yaxes(title_text="Múltiplo de solvencia (Sistema)", row=1, col=1)
+    fig.update_yaxes(title_text="Gap de capital (RD$ Bn)", row=1, col=1, secondary_y=True)
+    fig.update_yaxes(title_text="Múltiplo de solvencia (ARS)", row=2, col=1)
     return fig
 
 
