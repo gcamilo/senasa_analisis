@@ -779,6 +779,7 @@ def _make_siniestralidad_total(df: pl.DataFrame) -> go.Figure:
         hovertemplate="%{fullData.name}<br>%{x|%Y-%m}<br>%{y:,.2f}%<extra></extra>"
     )
     fig.update_layout(title="Siniestralidad total (%)")
+    fig.add_hline(y=100, line=dict(color="#718096", width=3, dash="dash"))
     return _format_figure(fig, y_title="%")
 
 
@@ -809,6 +810,7 @@ def _make_siniestralidad_regimen(df: pl.DataFrame) -> go.Figure:
         hovertemplate="%{fullData.name}<br>%{x|%Y-%m}<br>%{y:,.2f}%<extra></extra>"
     )
     fig.update_layout(title="Siniestralidad por régimen (%)")
+    fig.add_hline(y=100, line=dict(color="#718096", width=3, dash="dash"))
     return _format_figure(fig, y_title="%")
 
 
