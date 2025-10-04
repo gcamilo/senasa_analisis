@@ -1215,8 +1215,11 @@ def _make_financing_chart(df: pl.DataFrame) -> go.Figure:
     ordered = (
         df.sort("date")
         .with_columns(
-            (pl.col("spend_total") / 1e9).alias("spend_total_bn"),
-            (pl.col("gdp_current") / 1e9).alias("gdp_bn"),
+            (pl.col("spend_total") / 1e3).alias("spend_total_bn"),
+            pl.when(pl.col("gdp_current") > 0)
+            .then(pl.col("gdp_current") / 1e3)
+            .otherwise(None)
+            .alias("gdp_bn"),
             (pl.col("ratio_total") * 100).alias("ratio_pct"),
         )
     )
