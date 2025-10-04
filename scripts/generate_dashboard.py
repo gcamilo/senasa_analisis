@@ -1269,8 +1269,10 @@ def _make_financing_chart(df: pl.DataFrame) -> go.Figure:
 
 def _make_prestaciones_chart(df: pl.DataFrame) -> go.Figure:
     totals = (
-        df.group_by("group_name")
+        df.filter(pl.col("amount") > 0)
+        .group_by("group_name")
         .agg(pl.col("amount").sum().alias("total"))
+        .filter(pl.col("group_name").is_not_null())
         .sort("total", descending=True)
         .head(6)
     )

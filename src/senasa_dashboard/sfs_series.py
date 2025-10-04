@@ -120,7 +120,9 @@ def load_sfs_prestaciones(data_root: Path) -> pl.DataFrame:
     df = pd.read_excel(raw, header=5)
     df = df.rename(columns={"Grupo Número/2": "group_id", "Grupo Descripción ": "group_name"})
     df = df.dropna(subset=["group_id"])
+    df = df.dropna(subset=["group_name"])
     df = df[~df["group_id"].astype(str).str.contains("Fuente", case=False, na=False)]
+    df = df[~df["group_name"].astype(str).str.contains("Total", case=False, na=False)]
     df_melt = df.melt(id_vars=["group_id", "group_name"], var_name="year", value_name="amount")
     df_melt["year_numeric"] = pd.to_numeric(df_melt["year"], errors="coerce")
     df_melt = df_melt.dropna(subset=["year_numeric"])
