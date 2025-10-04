@@ -6,4 +6,3 @@ data/*
 !data/processed/
 !data/processed/*.parquet
 !data/processed/*.csv
-AGENTS.md
