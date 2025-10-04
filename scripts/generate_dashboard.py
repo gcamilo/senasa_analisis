@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from senasa_dashboard import build_monthly_metrics
-from senasa_dashboard.data import ENTITY_REST, ENTITY_SENASA
+from senasa_dashboard.data import ENTITY_REST, ENTITY_SENASA, ENTITY_TOTAL
 
 PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.27.0.min.js"
 DATA_ROOT = Path("data/processed")
@@ -40,6 +40,8 @@ PAGES: list[dict[str, object]] = [
         "include_summary": False,
         "sections": [
             "affiliations",
+            "solvency",
+            "dispersion",
             "reserves",
             "payables_ratio",
             "reserve_gap",
@@ -82,6 +84,7 @@ PER_BENEF_COLORS = {
 ENTITY_DISPLAY = {
     ENTITY_SENASA: "Sector público (ARS Senasa)",
     ENTITY_REST: "Sector privado (Resto ARS)",
+    ENTITY_TOTAL: "Sistema SFS (Total ARS)",
 }
 
 SECTOR_COMPONENTS = [
@@ -400,6 +403,44 @@ def load_affiliations(data_root: Path) -> pl.DataFrame:
             pl.col("regimen_subsidiado").fill_null(strategy="forward"),
             pl.col("regimen_contributivo").fill_null(strategy="forward"),
             pl.col("total_sfs").fill_null(strategy="forward"),
+        )
+    )
+    return df
+
+
+def load_solvency(data_root: Path) -> pl.DataFrame:
+    path = data_root / "ef2_metrics_grouped.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing solvency dataset: {path}")
+    entities = [ENTITY_TOTAL, ENTITY_SENASA, ENTITY_REST]
+    df = (
+        pl.read_parquet(path)
+        .filter(pl.col("entity").is_in(entities))
+        .select("entity", "date", "capital_multiple", "capital_gap")
+        .sort(["entity", "date"])
+        .with_columns(
+            pl.col("capital_multiple").cast(pl.Float64),
+            pl.col("capital_gap").cast(pl.Float64),
+        )
+    )
+    return df.with_columns((pl.col("capital_gap") / 1e9).alias("capital_gap_bn"))
+
+
+def load_dispersion(data_root: Path) -> pl.DataFrame:
+    path = data_root / "sfs_dispersion_capitas.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing dispersion dataset: {path}")
+    df = (
+        pl.read_parquet(path)
+        .select("date", "capitas_total", "monto_total")
+        .sort("date")
+        .with_columns(
+            pl.col("capitas_total").cast(pl.Float64),
+            pl.col("monto_total").cast(pl.Float64),
+        )
+        .with_columns(
+            (pl.col("capitas_total") / 1e6).alias("capitas_millones"),
+            (pl.col("monto_total") / 1e9).alias("monto_bn"),
         )
     )
     return df
@@ -824,6 +865,80 @@ def _make_payables_ratio(df: pl.DataFrame) -> go.Figure:
     return _format_figure(fig, y_title="Ratio")
 
 
+def _make_solvency_chart(df: pl.DataFrame) -> go.Figure:
+    ordered = df.sort(["date", "entity"])
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    color_map = {
+        ENTITY_TOTAL: "#2ca02c",
+        ENTITY_SENASA: ENTITY_COLORS[ENTITY_SENASA],
+        ENTITY_REST: ENTITY_COLORS[ENTITY_REST],
+    }
+    style_map = {
+        ENTITY_TOTAL: "solid",
+        ENTITY_SENASA: "dot",
+        ENTITY_REST: "dash",
+    }
+
+    for entity in (ENTITY_TOTAL, ENTITY_SENASA, ENTITY_REST):
+        subset = ordered.filter(pl.col("entity") == entity).drop_nulls("capital_multiple")
+        if subset.height == 0:
+            continue
+        display_name = ENTITY_DISPLAY.get(entity, entity)
+        fig.add_trace(
+            go.Scatter(
+                x=subset.get_column("date").to_list(),
+                y=subset.get_column("capital_multiple").to_list(),
+                mode="lines",
+                line=dict(
+                    color=color_map.get(entity, "#636363"),
+                    dash=style_map.get(entity, "solid"),
+                    width=3 if entity == ENTITY_TOTAL else 2,
+                ),
+                name=f"{display_name} · múltiplo",
+                hovertemplate=(
+                    f"{display_name}<br>%{{x|%Y-%m}}<br>Múltiplo: %{{y:,.2f}}x<extra></extra>"
+                ),
+            ),
+            secondary_y=False,
+        )
+
+    system_gap = ordered.filter(pl.col("entity") == ENTITY_TOTAL).drop_nulls("capital_gap_bn")
+    if system_gap.height > 0:
+        fig.add_trace(
+            go.Bar(
+                x=system_gap.get_column("date").to_list(),
+                y=system_gap.get_column("capital_gap_bn").to_list(),
+                name="Gap de capital (Sistema)",
+                marker_color="#a0aec0",
+                opacity=0.45,
+                hovertemplate=(
+                    "Sistema SFS<br>%{x|%Y-%m}<br>Gap de capital: RD$ %{y:,.2f} Bn"
+                    "<extra></extra>"
+                ),
+            ),
+            secondary_y=True,
+        )
+
+    fig.add_hline(
+        y=1.0,
+        line=dict(color="#4a5568", dash="dash"),
+        annotation_text="Umbral regulatorio 1x",
+        annotation_position="top left",
+        secondary_y=False,
+    )
+
+    fig.update_layout(
+        title="Solvencia del sistema SFS",
+        barmode="overlay",
+    )
+
+    fig = _format_figure(fig)
+    fig.update_yaxes(title_text="Múltiplo de solvencia (x)", secondary_y=False)
+    fig.update_yaxes(title_text="Gap de capital (RD$ Bn)", secondary_y=True)
+    return fig
+
+
 def _make_reserve_gap(df: pl.DataFrame) -> go.Figure:
     ordered = df.sort("date")
     fig = go.Figure()
@@ -878,6 +993,45 @@ def _make_enrollment_chart(df: pl.DataFrame) -> go.Figure:
     )
     fig.update_layout(title="Afiliados al SFS (millones)")
     return _format_figure(fig, y_title="Millones de afiliados")
+
+
+def _make_dispersion_chart(df: pl.DataFrame) -> go.Figure:
+    ordered = df.sort("date")
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    fig.add_trace(
+        go.Bar(
+            x=ordered.get_column("date").to_list(),
+            y=ordered.get_column("monto_bn").to_list(),
+            name="Monto dispersado (RD$ Bn)",
+            marker_color="#cbd5e0",
+            opacity=0.55,
+            hovertemplate=(
+                "Monto dispersado<br>%{x|%Y-%m}<br>RD$ %{y:,.2f} Bn<extra></extra>"
+            ),
+        ),
+        secondary_y=True,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=ordered.get_column("date").to_list(),
+            y=ordered.get_column("capitas_millones").to_list(),
+            name="Capitas pagadas (millones)",
+            mode="lines",
+            line=dict(color="#1f77b4"),
+            hovertemplate=(
+                "Capitas pagadas<br>%{x|%Y-%m}<br>%{y:,.2f} millones<extra></extra>"
+            ),
+        ),
+        secondary_y=False,
+    )
+
+    fig = _format_figure(fig)
+    fig.update_layout(title="Dispersión mensual de capitas")
+    fig.update_yaxes(title_text="Capitas (millones)", secondary_y=False)
+    fig.update_yaxes(title_text="Monto (RD$ Bn)", secondary_y=True)
+    return fig
 
 
 def _make_net_income_per_benef_chart(df: pl.DataFrame) -> go.Figure:
@@ -994,6 +1148,8 @@ def main() -> None:
     metrics.write_parquet(METRICS_PATH)
 
     affiliations = load_affiliations(DATA_ROOT)
+    solvency = load_solvency(DATA_ROOT)
+    dispersion = load_dispersion(DATA_ROOT)
     per_beneficiary = build_net_income_per_beneficiary(metrics, affiliations)
     summary_html = build_kpi_cards_html(metrics)
     section_map = {
@@ -1016,6 +1172,16 @@ def main() -> None:
             "title": "Afiliados al SFS",
             "caption": "Padrones oficiales del Seguro Familiar de Salud; se presentan los millones de beneficiarios en los regímenes subsidiado y contributivo.",
             "figure": _make_enrollment_chart(affiliations),
+        },
+        "solvency": {
+            "title": "Solvencia del sistema SFS",
+            "caption": "Índice de solvencia (múltiplo regulatorio) para el total del sistema y sus dos bloques principales, según los estados EF2 publicados por SISALRIL. El área muestra la brecha de capital del agregado del sistema.",
+            "figure": _make_solvency_chart(solvency),
+        },
+        "dispersion": {
+            "title": "Dispersión de capitas",
+            "caption": "Pagos mensuales del Seguro Familiar de Salud a las ARS (capitas) y el monto asociado en RD$ Billones. Fuente: estadísticas de dispersión de SISALRIL.",
+            "figure": _make_dispersion_chart(dispersion),
         },
         "net_income": {
             "title": "Resultado neto mensual (Millones DOP)",
