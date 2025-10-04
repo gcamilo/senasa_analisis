@@ -54,6 +54,7 @@ PAGES: list[dict[str, object]] = [
         "sections": [
             "income",
             "claims",
+            "senasa_reserves_income",
             "net_income",
             "senasa_regimen",
         ],
@@ -960,6 +961,70 @@ def _make_reserve_gap(df: pl.DataFrame) -> go.Figure:
     return _format_figure(fig, y_title="%")
 
 
+def _make_senasa_reserves_income(df: pl.DataFrame) -> go.Figure:
+    senasa = (
+        df.filter(pl.col("entity") == ENTITY_SENASA)
+        .select(
+            "date",
+            "monthly_income_mm",
+            "technical_reserves_mm",
+            "reserve_gap_pct",
+        )
+        .drop_nulls("date")
+        .sort("date")
+        .with_columns(
+            (pl.col("monthly_income_mm") / 1_000).alias("monthly_income_bn"),
+            (pl.col("technical_reserves_mm") / 1_000).alias("technical_reserves_bn"),
+        )
+    )
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    dates = senasa.get_column("date").to_list()
+
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=senasa.get_column("monthly_income_bn").to_list(),
+            name="Ingreso mensual",
+            mode="lines",
+            line=dict(color="#1f77b4", width=2),
+            hovertemplate="Ingreso mensual<br>%{x|%Y-%m}<br>RD$ %{y:,.2f} Bn<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=senasa.get_column("technical_reserves_bn").to_list(),
+            name="Reservas técnicas",
+            mode="lines",
+            line=dict(color="#2ca02c", width=2, dash="dot"),
+            hovertemplate="Reservas técnicas<br>%{x|%Y-%m}<br>RD$ %{y:,.2f} Bn<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=senasa.get_column("reserve_gap_pct").to_list(),
+            name="Gap de reservas (%)",
+            mode="lines",
+            line=dict(color="#ff7f0e", width=2),
+            hovertemplate="Gap de reservas<br>%{x|%Y-%m}<br>%{y:,.2f}%<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+
+    fig = _format_figure(fig)
+    fig.update_layout(title="Senasa · Reservas vs ingreso")
+    fig.update_yaxes(title_text="RD$ Billones", secondary_y=False)
+    fig.update_yaxes(title_text="Gap de reservas (%)", secondary_y=True)
+    return fig
+
+
 def _fig_to_html(fig: go.Figure) -> str:
     return fig.to_html(full_html=False, include_plotlyjs=False, default_height="520px")
 
@@ -1162,6 +1227,11 @@ def main() -> None:
             "title": "Siniestros mensuales (Bn DOP)",
             "caption": "Costo mensual estimado como ingresos × siniestralidad declarada. Permite contrastar la presión asistencial frente al flujo de primas en cada bloque.",
             "figure": _make_grouped_bar(metrics, "monthly_claims_mm", title="Siniestros mensuales (Bn DOP)", y_label="Bn DOP"),
+        },
+        "senasa_reserves_income": {
+            "title": "Senasa: reservas vs ingreso",
+            "caption": "Compara el flujo mensual de ingresos de Senasa con su stock de reservas técnicas; la línea secundaria muestra la brecha de reservas como % del requerimiento.",
+            "figure": _make_senasa_reserves_income(metrics),
         },
         "sector_net": {
             "title": "Resultado neto mensual por sector",
