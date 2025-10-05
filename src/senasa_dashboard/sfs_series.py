@@ -130,6 +130,7 @@ def load_sfs_prestaciones(data_root: Path) -> pl.DataFrame:
     df_melt["amount"] = pd.to_numeric(df_melt["amount"], errors="coerce").fillna(0.0)
     df_melt["group_id"] = df_melt["group_id"].astype(str)
     df_melt["group_name"] = df_melt["group_name"].astype(str).str.strip()
+    df_melt = df_melt[df_melt["group_name"].str.lower() != "nan"]
     df_melt["date"] = pd.to_datetime(df_melt["year"].astype(str) + "-01-01")
     pl_df = pl.from_pandas(df_melt.drop(columns=["year_numeric"]))
     pl_df = pl_df.select("date", "year", "group_id", "group_name", "amount")
