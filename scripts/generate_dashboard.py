@@ -1464,7 +1464,7 @@ def main() -> None:
         },
         "solvency": {
             "title": "Solvencia del sistema SFS",
-            "caption": "Índice de solvencia (múltiplo regulatorio) para el total del sistema y sus dos bloques principales, según los estados EF2 publicados por SISALRIL. El área muestra la brecha de capital del agregado del sistema.",
+            "caption": "Índice de solvencia (múltiplo regulatorio) para el total del sistema y sus dos bloques principales, según los estados EF2 publicados por SISALRIL. La línea 1x marca el umbral mínimo exigido por la Resolución CNSS No. 187-2007 (Manual de Solvencia de ARS). El área muestra la brecha de capital del agregado del sistema.",
             "figure": _make_solvency_chart(solvency),
         },
         "dispersion": {
