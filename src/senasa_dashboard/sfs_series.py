@@ -119,10 +119,17 @@ def load_sfs_prestaciones(data_root: Path) -> pl.DataFrame:
     raw = _ensure_raw_exists("h_prestaciones_sfs_01.xlsx")
     df = pd.read_excel(raw, header=5)
     df = df.rename(columns={"Grupo Número/2": "group_id", "Grupo Descripción ": "group_name"})
-    df = df.dropna(subset=["group_id"])
-    df = df.dropna(subset=["group_name"])
-    df = df[~df["group_id"].astype(str).str.contains("Fuente", case=False, na=False)]
-    df = df[~df["group_name"].astype(str).str.contains("Total", case=False, na=False)]
+    df = df.dropna(subset=["group_id", "group_name"])
+    df["group_id"] = df["group_id"].astype(str).str.strip()
+    df["group_name"] = df["group_name"].astype(str).str.strip()
+
+    # Keep only numeric group identifiers (drop totals/footnotes)
+    df = df[df["group_id"].str.fullmatch(r"\d+")]
+
+    # Remove any residual summary rows
+    df = df[~df["group_name"].str.contains("Total", case=False, na=False)]
+    df = df[~df["group_name"].str.contains("Distribución", case=False, na=False)]
+    df = df[~df["group_name"].str.contains("Notas", case=False, na=False)]
     df_melt = df.melt(id_vars=["group_id", "group_name"], var_name="year", value_name="amount")
     df_melt["year_numeric"] = pd.to_numeric(df_melt["year"], errors="coerce")
     df_melt = df_melt.dropna(subset=["year_numeric"])
@@ -130,7 +137,6 @@ def load_sfs_prestaciones(data_root: Path) -> pl.DataFrame:
     df_melt["amount"] = pd.to_numeric(df_melt["amount"], errors="coerce").fillna(0.0)
     df_melt["group_id"] = df_melt["group_id"].astype(str)
     df_melt["group_name"] = df_melt["group_name"].astype(str).str.strip()
-    df_melt = df_melt[df_melt["group_name"].str.lower() != "nan"]
     df_melt["date"] = pd.to_datetime(df_melt["year"].astype(str) + "-01-01")
     pl_df = pl.from_pandas(df_melt.drop(columns=["year_numeric"]))
     pl_df = pl_df.select("date", "year", "group_id", "group_name", "amount")
